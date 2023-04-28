@@ -41,14 +41,14 @@ public class MockServerRunner {
 			log.info(exchange.getRequestURI().toString());
 			try (final OutputStream stream = exchange.getResponseBody()) {
 				final PrintWriter printWriter = new PrintWriter(stream);
-				boolean success = counter.getAndIncrement() % 3 == 2;
+				final boolean success = counter.getAndIncrement() % 3 == 2;
 				final String body = success ? "Hello World!" : "Oops!";
 				exchange.sendResponseHeaders(success ? 200 : 503, body.length());
 				printWriter.write(body);
 				printWriter.flush();
 			}
 		});
-		log.info("Start http server on" + port);
+		log.info("Start http server on " + port);
 		this.httpServer.start();
 	}
 

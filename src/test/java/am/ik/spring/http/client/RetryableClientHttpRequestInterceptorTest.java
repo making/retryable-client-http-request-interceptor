@@ -15,7 +15,6 @@
  */
 package am.ik.spring.http.client;
 
-import java.time.Duration;
 import java.util.Collections;
 
 import org.junit.jupiter.api.AfterEach;
@@ -24,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.util.backoff.ExponentialBackOff;
+import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 
@@ -44,28 +45,65 @@ class RetryableClientHttpRequestInterceptorTest {
 	}
 
 	@Test
-	void retry_recover() {
+	void retry_fixed_recover() {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
-				Collections.singletonList(new RetryableClientHttpRequestInterceptor(2, Duration.ofMillis(100))));
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
-															// 6
+		// 6
 	}
 
 	@Test
-	void retry_fail() {
+	void retry_fixed_fail() {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
-				Collections.singletonList(new RetryableClientHttpRequestInterceptor(1, Duration.ofMillis(100))));
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
-															// 6
+		// 6
+	}
+
+	@Test
+	void not_recoverable() {
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(Collections.singletonList(
+				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), Collections.singleton(500))));
+		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+		assertThat(response.getBody()).isEqualTo("Oops!");
+		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
+	}
+
+	@Test
+	void retry_exponential_recover() {
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))));
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+		assertThat(response.getBody()).isEqualTo("Hello World!");
+		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
+		// 6
+	}
+
+	@Test
+	void retry_exponential_fail() {
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
+		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+		assertThat(response.getBody()).isEqualTo("Oops!");
+		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
+		// 6
 	}
 
 	private static class NoOpResponseErrorHandler implements ResponseErrorHandler {
