@@ -47,8 +47,15 @@ jobs:
         cache: maven
         gpg-private-key: ${{ steps.secrets.outputs.GPG_SECRING }}
         gpg-passphrase: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
-    - name: Unit Tests
-      run: ./mvnw -V --no-transfer-progress clean test
+    - name: Unit Tests for Spring 5
+      run: |
+        set -e
+        sed -e 's/<artifactId>retryable-client-http-request-interceptor/<artifactId>retryable-client-http-request-interceptor-spring5/' -e 's/<java.version>17/<java.version>8/' -e 's/<spring-boot.version>3.0.6/<spring-boot.version>2.7.11/' pom.xml > pom-spring5.xml        
+        ./mvnw -f pom-spring5.xml -V --no-transfer-progress clean test
+    - name: Unit Tests for Spring 6
+      run: |
+        set -e
+        ./mvnw -V --no-transfer-progress clean test
     - name: Deploy to sonatype-snapshots
       if: github.ref == 'refs/heads/develop'
       run: |
@@ -66,7 +73,8 @@ jobs:
         EOF
         CURRENT_VERSION=$(grep '<version>' pom.xml | head -n 1 | sed -e 's|<version>||g' -e 's|</version>||g' -e 's| ||g' |  tr -d '\t')
         if [ "${CURRENT_VERSION}" = "$(echo ${CURRENT_VERSION} | grep "\-SNAPSHOT")" ];then
-          ./mvnw -V deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
+          ./mvnw -f pom-spring5.xml -V clean deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
+          ./mvnw -V clean deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
         fi
     - name: Deploy to sonatype-releases
       if: github.ref == 'refs/heads/main'
@@ -83,7 +91,24 @@ jobs:
           </servers>
         </settings>
         EOF
+        mvn -f pom-spring5.xml\
+            -V \
+            clean \
+            javadoc:jar \
+            source:jar \
+            package \
+            org.apache.maven.plugins:maven-gpg-plugin:3.0.1:sign \
+            org.sonatype.plugins:nexus-staging-maven-plugin:1.6.13:deploy \
+            --no-transfer-progress \
+            -s settings.xml \
+            -DserverId=repo \
+            -Dgpg.passphrase=${GPG_PASSPHRASE} \
+            -DnexusUrl=https://oss.sonatype.org \
+            -DautoReleaseAfterClose=true \
+            -DaltDeploymentRepository=repo::default::https://oss.sonatype.org/service/local/staging/deploy/maven2 \
+            -DskipTests=true
         mvn -V \
+            clean \
             javadoc:jar \
             source:jar \
             package \

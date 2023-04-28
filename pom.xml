@@ -4,11 +4,12 @@
 		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>am.ik.template</groupId>
-	<artifactId>java-lib</artifactId>
-	<version>0.1.1-SNAPSHOT</version>
-	<name>java-lib</name>
-	<description>A Java library template</description>
+	<groupId>am.ik.spring</groupId>
+	<artifactId>retryable-client-http-request-interceptor</artifactId>
+	<version>0.1.0-SNAPSHOT</version>
+	<name>retryable-client-http-request-interceptor</name>
+	<description>RetryableClientHttpRequestInterceptor for Spring RestTemplate
+	</description>
 
 	<properties>
 		<java.version>17</java.version>
@@ -25,12 +26,15 @@
 		</license>
 	</licenses>
 	<scm>
-		<url>https://github.com/making/java-lib</url>
-		<connection>scm:git:git@github.com:making/java-lib.git</connection>
-		<developerConnection>scm:git:git@github.com:making/java-lib.git
+		<url>https://github.com/making/retryable-client-http-request-interceptor</url>
+		<connection>
+			scm:git:git@github.com:making/retryable-client-http-request-interceptor.git
+		</connection>
+		<developerConnection>
+			scm:git:git@github.com:making/retryable-client-http-request-interceptor.git
 		</developerConnection>
 	</scm>
-	<url>https://github.com/making/java-lib</url>
+	<url>https://github.com/making/retryable-client-http-request-interceptor</url>
 
 	<developers>
 		<developer>
@@ -42,8 +46,8 @@
 	</developers>
 	<dependencies>
 		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-api</artifactId>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-web</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
