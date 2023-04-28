@@ -42,10 +42,14 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final boolean retryClientTimeout;
 
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
-		.unmodifiableSet(new HashSet<>(Arrays.asList(408 /* Request Timeout */,
-				425 /* Too Early */, 429 /* Too Many Requests */,
-				500 /* Internal Server Error */, 502 /* Bad Gateway */,
-				503 /* Service Unavailable */, 504 /* Gateway Timeout */
+		.unmodifiableSet(new HashSet<>(Arrays.asList( //
+				408 /* Request Timeout */, //
+				425 /* Too Early */, //
+				429 /* Too Many Requests */, //
+				500 /* Internal Server Error */, //
+				502 /* Bad Gateway */, //
+				503 /* Service Unavailable */, //
+				504 /* Gateway Timeout */
 		)));
 
 	private static final int MAX_ATTEMPTS = 100;
