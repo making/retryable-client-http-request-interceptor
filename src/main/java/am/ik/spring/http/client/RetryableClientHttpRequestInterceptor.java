@@ -18,7 +18,6 @@ package am.ik.spring.http.client;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.SocketException;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -31,46 +30,39 @@ import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.util.backoff.BackOff;
+import org.springframework.util.backoff.BackOffExecution;
 
 public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestInterceptor {
 
-	private final int retryMaxCount;
-
-	private final Duration retryWaitTime;
+	private final BackOff backOff;
 
 	private final Set<Integer> retryableResponseStatuses;
 
 	private final boolean retryClientTimeout;
 
+	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
+		.unmodifiableSet(new HashSet<>(Arrays.asList(408 /* Request Timeout */,
+				425 /* Too Early */, 429 /* Too Many Requests */,
+				500 /* Internal Server Error */, 502 /* Bad Gateway */,
+				503 /* Service Unavailable */, 504 /* Gateway Timeout */
+		)));
+
+	private static final int MAX_ATTEMPTS_LIMIT = 100;
+
 	private final Log log = LogFactory.getLog(RetryableClientHttpRequestInterceptor.class);
 
-	public RetryableClientHttpRequestInterceptor() {
-		this(2);
+	public RetryableClientHttpRequestInterceptor(BackOff backOff) {
+		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, true);
 	}
 
-	public RetryableClientHttpRequestInterceptor(int retryMaxCount) {
-		this(retryMaxCount, Duration.ofSeconds(2));
+	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses) {
+		this(backOff, retryableResponseStatuses, true);
 	}
 
-	public RetryableClientHttpRequestInterceptor(int retryMaxCount, Duration retryWaitTime) {
-		this(retryMaxCount, retryWaitTime,
-				Collections
-					.unmodifiableSet(new HashSet<>(Arrays.asList(408 /* Request Timeout */,
-							425 /* Too Early */, 429 /* Too Many Requests */,
-							500 /* Internal Server Error */, 502 /* Bad Gateway */,
-							503 /* Service Unavailable */, 504 /* Gateway Timeout */
-					))));
-	}
-
-	public RetryableClientHttpRequestInterceptor(int retryMaxCount, Duration retryWaitTime,
-			Set<Integer> retryableResponseStatuses) {
-		this(retryMaxCount, retryWaitTime, retryableResponseStatuses, true);
-	}
-
-	public RetryableClientHttpRequestInterceptor(int retryMaxCount, Duration retryWaitTime,
-			Set<Integer> retryableResponseStatuses, boolean retryClientTimeout) {
-		this.retryMaxCount = retryMaxCount;
-		this.retryWaitTime = retryWaitTime;
+	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
+			boolean retryClientTimeout) {
+		this.backOff = backOff;
 		this.retryableResponseStatuses = retryableResponseStatuses;
 		this.retryClientTimeout = retryClientTimeout;
 	}
@@ -78,22 +70,24 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	@Override
 	public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
 			throws IOException {
-		for (int retryCount = 0; retryCount <= retryMaxCount; retryCount++) {
+		final BackOffExecution backOffExecution = this.backOff.start();
+		for (int i = 1; i <= MAX_ATTEMPTS_LIMIT; i++) {
+			final long backOff = backOffExecution.nextBackOff();
 			try {
 				if (log.isDebugEnabled()) {
-					log.debug(String.format("Request %d: %s %s", retryCount, request.getMethod(), request.getURI()));
-					log.debug(String.format("Request %d: %s", retryCount, request.getHeaders()));
+					log.debug(String.format("Request %d: %s %s", i, request.getMethod(), request.getURI()));
+					log.debug(String.format("Request %d: %s", i, request.getHeaders()));
 				}
 				final ClientHttpResponse response = execution.execute(request, body);
 				if (log.isDebugEnabled()) {
-					log.debug(String.format("Response %d: %s", retryCount, response.getStatusCode()));
-					log.debug(String.format("Response %d: %s", retryCount, response.getHeaders()));
+					log.debug(String.format("Response %d: %s", i, response.getStatusCode()));
+					log.debug(String.format("Response %d: %s", i, response.getHeaders()));
 				}
 				if (!isRetryableHttpStatus(() -> response.getStatusCode().isError(),
 						() -> response.getStatusCode().value())) {
 					return response;
 				}
-				if (retryCount == retryMaxCount) {
+				if (backOff == BackOffExecution.STOP) {
 					log.warn("No longer retryable");
 					return response;
 				}
@@ -102,7 +96,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				if (!isRetryableClientTimeout(e)) {
 					throw e;
 				}
-				else if (retryCount == retryMaxCount) {
+				else if (backOff == BackOffExecution.STOP) {
 					log.warn("No longer retryable", e);
 					throw e;
 				}
@@ -111,11 +105,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				}
 			}
 			if (log.isInfoEnabled()) {
-				log.info(String.format("Wait %dms for %d/%d retries...", retryWaitTime.toMillis(), retryCount + 1,
-						retryMaxCount));
+				log.info(String.format("Wait interval (%s)", backOffExecution));
 			}
 			try {
-				Thread.sleep(retryWaitTime.toMillis());
+				Thread.sleep(backOff);
 			}
 			catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
