@@ -16,8 +16,8 @@
 package am.ik.spring.http.client;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
+import java.net.URLConnection;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -42,11 +42,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final boolean retryClientTimeout;
 
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
-		.unmodifiableSet(new HashSet<>(Arrays.asList(408 /* Request Timeout */,
-				425 /* Too Early */, 429 /* Too Many Requests */,
-				500 /* Internal Server Error */, 502 /* Bad Gateway */,
-				503 /* Service Unavailable */, 504 /* Gateway Timeout */
-		)));
+			.unmodifiableSet(new HashSet<>(Arrays.asList(408 /* Request Timeout */,
+					425 /* Too Early */, 429 /* Too Many Requests */,
+					500 /* Internal Server Error */, 502 /* Bad Gateway */,
+					503 /* Service Unavailable */, 504 /* Gateway Timeout */
+			)));
 
 	private static final int MAX_ATTEMPTS = 100;
 
@@ -118,8 +118,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	}
 
 	/**
-	 * @see {@link HttpURLConnection#setConnectTimeout(int)}
-	 * @see {@link HttpURLConnection#setReadTimeout(int)}
+	 * @see {@link URLConnection#setConnectTimeout(int)}
+	 * @see {@link URLConnection#setReadTimeout(int)}
 	 */
 	private boolean isRetryableClientTimeout(IOException e) {
 		return (e instanceof SocketTimeoutException) && retryClientTimeout;
