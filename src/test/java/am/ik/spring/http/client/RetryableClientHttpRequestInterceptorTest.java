@@ -31,6 +31,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 
+import static am.ik.spring.http.client.RetryableClientHttpRequestInterceptor.DEFAULT_RETRYABLE_RESPONSE_STATUSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -83,7 +84,7 @@ class RetryableClientHttpRequestInterceptorTest {
 			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
-															// 6
+		// 6
 	}
 
 	@Test
@@ -98,7 +99,7 @@ class RetryableClientHttpRequestInterceptorTest {
 			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
-															// 6
+		// 6
 	}
 
 	@Test
@@ -109,6 +110,20 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setRequestFactory(requestFactory);
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
+		assertThatThrownBy(() -> restTemplate
+			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class))
+			.isInstanceOf(ResourceAccessException.class)
+			.hasCauseInstanceOf(SocketTimeoutException.class);
+	}
+
+	@Test
+	void no_retry_for_timeout() {
+		final RestTemplate restTemplate = new RestTemplate();
+		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setReadTimeout(100);
+		restTemplate.setRequestFactory(requestFactory);
+		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
+				new FixedBackOff(100, 2), DEFAULT_RETRYABLE_RESPONSE_STATUSES, false)));
 		assertThatThrownBy(() -> restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class))
 			.isInstanceOf(ResourceAccessException.class)
