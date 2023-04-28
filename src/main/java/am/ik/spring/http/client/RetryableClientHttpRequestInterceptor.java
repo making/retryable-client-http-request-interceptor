@@ -48,7 +48,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				503 /* Service Unavailable */, 504 /* Gateway Timeout */
 		)));
 
-	private static final int MAX_ATTEMPTS_LIMIT = 100;
+	private static final int MAX_ATTEMPTS = 100;
 
 	private final Log log = LogFactory.getLog(RetryableClientHttpRequestInterceptor.class);
 
@@ -71,7 +71,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
 			throws IOException {
 		final BackOffExecution backOffExecution = this.backOff.start();
-		for (int i = 1; i <= MAX_ATTEMPTS_LIMIT; i++) {
+		for (int i = 1; i <= MAX_ATTEMPTS; i++) {
 			final long backOff = backOffExecution.nextBackOff();
 			try {
 				if (log.isDebugEnabled()) {
@@ -114,7 +114,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				Thread.currentThread().interrupt();
 			}
 		}
-		throw new IllegalStateException("should not come here!");
+		throw new IllegalStateException("Maximum number of attempts reached!");
 	}
 
 	/**
