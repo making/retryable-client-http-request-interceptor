@@ -15,6 +15,7 @@
  */
 package am.ik.spring.http.client;
 
+import java.net.SocketTimeoutException;
 import java.util.Collections;
 
 import org.junit.jupiter.api.AfterEach;
@@ -23,12 +24,15 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RetryableClientHttpRequestInterceptorTest {
 
@@ -79,6 +83,36 @@ class RetryableClientHttpRequestInterceptorTest {
 			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
+															// 6
+	}
+
+	@Test
+	void timeout_recover() {
+		final RestTemplate restTemplate = new RestTemplate();
+		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setReadTimeout(100);
+		restTemplate.setRequestFactory(requestFactory);
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class);
+		assertThat(response.getBody()).isEqualTo("Hello World!");
+		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
+															// 6
+	}
+
+	@Test
+	void timeout_fail() {
+		final RestTemplate restTemplate = new RestTemplate();
+		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setReadTimeout(100);
+		restTemplate.setRequestFactory(requestFactory);
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
+		assertThatThrownBy(() -> restTemplate
+			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class))
+			.isInstanceOf(ResourceAccessException.class)
+			.hasCauseInstanceOf(SocketTimeoutException.class);
 	}
 
 	@Test

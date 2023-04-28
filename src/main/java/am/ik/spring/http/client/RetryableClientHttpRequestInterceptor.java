@@ -17,7 +17,7 @@ package am.ik.spring.http.client;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -122,7 +122,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	 * @see {@link HttpURLConnection#setReadTimeout(int)}
 	 */
 	private boolean isRetryableClientTimeout(IOException e) {
-		return (e instanceof SocketException) && retryClientTimeout;
+		return (e instanceof SocketTimeoutException) && retryClientTimeout;
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)

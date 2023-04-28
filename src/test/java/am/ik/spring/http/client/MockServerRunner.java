@@ -48,6 +48,25 @@ public class MockServerRunner {
 				printWriter.flush();
 			}
 		});
+		this.httpServer.createContext("/slow", exchange -> {
+			log.info(exchange.getRequestURI().toString());
+			try (final OutputStream stream = exchange.getResponseBody()) {
+				final PrintWriter printWriter = new PrintWriter(stream);
+				final boolean success = counter.getAndIncrement() % 3 == 2;
+				final String body = success ? "Hello World!" : "Slow World!";
+				if (!success) {
+					try {
+						Thread.sleep(200L);
+					}
+					catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+				exchange.sendResponseHeaders(200, body.length());
+				printWriter.write(body);
+				printWriter.flush();
+			}
+		});
 		log.info("Start http server on " + port);
 		this.httpServer.start();
 	}
