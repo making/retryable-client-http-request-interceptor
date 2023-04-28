@@ -126,12 +126,12 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	 * @see {@link URLConnection#setReadTimeout(int)}
 	 */
 	private boolean isRetryableClientTimeout(IOException e) {
-		return (e instanceof SocketTimeoutException) && retryClientTimeout;
+		return (e instanceof SocketTimeoutException) && this.retryClientTimeout;
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
 			throws IOException {
-		return errorSupplier.isError() && retryableResponseStatuses.contains(statusSupplier.getStatus());
+		return errorSupplier.isError() && this.retryableResponseStatuses.contains(statusSupplier.getStatus());
 	}
 
 	// to work with both Spring 5 (HttpStatus) and 6 (HttpStatusCode)
