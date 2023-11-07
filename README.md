@@ -30,7 +30,7 @@ For Spring 5 / Spring Boot 2
 private final RestTemplate restTemplate;
 
 public MyClient(RestTemplateBuilder builder){
-	this.restTemplate=builder
+	this.restTemplate = builder
 		.rootUri("http://example.com")
 		.additionalInterceptors(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2)))
 		.build();
@@ -44,7 +44,7 @@ or
 private final RestClient restClient;
 
 public MyClient(RestClient.Builder builder){
-	this.restTemplate=builder
+	this.restClient = builder
 		.baseUrl("http://example.com")
 		.requestInterceptor(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2)))
 		.build();
