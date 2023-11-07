@@ -32,11 +32,24 @@ private final RestTemplate restTemplate;
 public MyClient(RestTemplateBuilder builder){
 	this.restTemplate=builder
 		.rootUri("http://example.com")
-		.interceptors(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2)))
+		.additionalInterceptors(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2)))
 		.build();
 }
 ```
 
+or 
+
+```java
+// Spring 6.1+ / Spring Boot 3.2+
+private final RestClient restClient;
+
+public MyClient(RestClient.Builder builder){
+	this.restTemplate=builder
+		.baseUrl("http://example.com")
+		.requestInterceptor(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2)))
+		.build();
+}
+```
 * How to use exponential backoff
 ```java
 new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))
