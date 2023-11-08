@@ -1,6 +1,6 @@
 # retryable-client-http-request-interceptor
 
-RetryableClientHttpRequestInterceptor for RestTemplate
+RetryableClientHttpRequestInterceptor for `RestTemplate` and `RestClient`
 
 For Spring 6+ / Spring Boot 3+
 
