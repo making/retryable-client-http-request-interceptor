@@ -27,11 +27,19 @@ import org.apache.commons.logging.LogFactory;
 
 public class MockServerRunner {
 
-	static int port = 9999;
+	private final int port;
 
 	private HttpServer httpServer;
 
 	private final Log log = LogFactory.getLog(MockServerRunner.class);
+
+	public MockServerRunner(int port) {
+		this.port = port;
+	}
+
+	public int port() {
+		return port;
+	}
 
 	public void run() throws Exception {
 		this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);

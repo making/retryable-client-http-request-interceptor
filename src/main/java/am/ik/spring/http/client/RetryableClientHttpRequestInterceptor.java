@@ -16,6 +16,7 @@
 package am.ik.spring.http.client;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.URLConnection;
 import java.util.Arrays;
@@ -97,7 +98,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				}
 			}
 			catch (IOException e) {
-				if (!isRetryableClientTimeout(e)) {
+				if (!isRetryableIOException(e)) {
 					throw e;
 				}
 				else if (backOff == BackOffExecution.STOP) {
@@ -119,6 +120,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			}
 		}
 		throw new IllegalStateException("Maximum number of attempts reached!");
+	}
+
+	private boolean isRetryableIOException(IOException e) {
+		return (e instanceof ConnectException) || isRetryableClientTimeout(e);
 	}
 
 	/**

@@ -15,8 +15,13 @@
  */
 package am.ik.spring.http.client;
 
+import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RetryableClientHttpRequestInterceptorTest {
 
-	private final MockServerRunner mockServerRunner = new MockServerRunner();
+	private final MockServerRunner mockServerRunner = new MockServerRunner(9999);
 
 	@BeforeEach
 	void init() throws Exception {
@@ -55,7 +60,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
 		// 6
@@ -68,7 +73,7 @@ class RetryableClientHttpRequestInterceptorTest {
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
 		// 6
@@ -81,7 +86,7 @@ class RetryableClientHttpRequestInterceptorTest {
 				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), Collections.singleton(500))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
 		// 6
@@ -96,7 +101,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
 		// 6
@@ -111,7 +116,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		assertThatThrownBy(() -> restTemplate
-			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class))
+			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)
 			.hasCauseInstanceOf(SocketTimeoutException.class);
 	}
@@ -125,7 +130,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
 				new FixedBackOff(100, 2), DEFAULT_RETRYABLE_RESPONSE_STATUSES, false)));
 		assertThatThrownBy(() -> restTemplate
-			.getForEntity(String.format("http://localhost:%d/slow", MockServerRunner.port), String.class))
+			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)
 			.hasCauseInstanceOf(SocketTimeoutException.class);
 	}
@@ -136,7 +141,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))));
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
 		// 6
@@ -149,10 +154,49 @@ class RetryableClientHttpRequestInterceptorTest {
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
 		final ResponseEntity<String> response = restTemplate
-			.getForEntity(String.format("http://localhost:%d/hello", MockServerRunner.port), String.class);
+			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
 		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
 		// 6
+	}
+
+	@Test
+	void connection_refused_recover() {
+		int port = this.mockServerRunner.port() + 1;
+		CountDownLatch latch = new CountDownLatch(1);
+		ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+		executorService.schedule(() -> {
+			try {
+				MockServerRunner runner = new MockServerRunner(port);
+				runner.run();
+				latch.await(30, TimeUnit.SECONDS);
+				runner.destroy();
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}, 100, TimeUnit.MILLISECONDS);
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 10))));
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/hello", port), String.class);
+		assertThat(response.getBody()).isEqualTo("Hello World!");
+		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
+		latch.countDown();
+		// 6
+	}
+
+	@Test
+	void connection_refused_fail() {
+		int port = this.mockServerRunner.port() + 1;
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 10))));
+		assertThatThrownBy(
+				() -> restTemplate.getForEntity(String.format("http://localhost:%d/hello", port), String.class))
+			.isInstanceOf(ResourceAccessException.class)
+			.hasCauseInstanceOf(ConnectException.class);
 	}
 
 	private static class NoOpResponseErrorHandler implements ResponseErrorHandler {
