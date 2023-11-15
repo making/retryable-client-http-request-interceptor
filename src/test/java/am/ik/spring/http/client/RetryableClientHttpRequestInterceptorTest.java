@@ -127,8 +127,9 @@ class RetryableClientHttpRequestInterceptorTest {
 		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
 		requestFactory.setReadTimeout(100);
 		restTemplate.setRequestFactory(requestFactory);
-		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
-				new FixedBackOff(100, 2), DEFAULT_RETRYABLE_RESPONSE_STATUSES, false)));
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2),
+						DEFAULT_RETRYABLE_RESPONSE_STATUSES, options -> options.retryClientTimeout(false))));
 		assertThatThrownBy(() -> restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)

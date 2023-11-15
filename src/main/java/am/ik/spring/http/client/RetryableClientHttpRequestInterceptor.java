@@ -19,10 +19,12 @@ import java.io.IOException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -42,6 +44,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final boolean retryClientTimeout;
 
+	private final boolean retryConnectException;
+
+	private final boolean retryUnknownHostException;
+
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
 		.unmodifiableSet(new HashSet<>(Arrays.asList( //
 				408 /* Request Timeout */, //
@@ -57,19 +63,59 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final Log log = LogFactory.getLog(RetryableClientHttpRequestInterceptor.class);
 
+	public static class Options {
+
+		private boolean retryClientTimeout = true;
+
+		private boolean retryConnectException = true;
+
+		private boolean retryUnknownHostException = true;
+
+		public Options retryClientTimeout(boolean retryClientTimeout) {
+			this.retryClientTimeout = retryClientTimeout;
+			return this;
+		}
+
+		public Options retryConnectException(boolean retryConnectException) {
+			this.retryConnectException = retryConnectException;
+			return this;
+		}
+
+		public Options retryUnknownHostException(boolean retryUnknownHostException) {
+			this.retryUnknownHostException = retryUnknownHostException;
+			return this;
+		}
+
+	}
+
 	public RetryableClientHttpRequestInterceptor(BackOff backOff) {
-		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, true);
+		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, __ -> {
+		});
 	}
 
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses) {
-		this(backOff, retryableResponseStatuses, true);
+		this(backOff, retryableResponseStatuses, __ -> {
+		});
 	}
 
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
-			boolean retryClientTimeout) {
+			Consumer<Options> configurer) {
+		Options options = new Options();
+		configurer.accept(options);
 		this.backOff = backOff;
 		this.retryableResponseStatuses = retryableResponseStatuses;
-		this.retryClientTimeout = retryClientTimeout;
+		this.retryClientTimeout = options.retryClientTimeout;
+		this.retryConnectException = options.retryConnectException;
+		this.retryUnknownHostException = options.retryUnknownHostException;
+	}
+
+	/**
+	 * Use {@link #RetryableClientHttpRequestInterceptor(BackOff, Set, Consumer) instead}
+	 */
+	@Deprecated(forRemoval = true, since = "0.2.4")
+	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
+			boolean retryClientTimeout) {
+		this(backOff, retryableResponseStatuses, options -> options.retryClientTimeout(retryClientTimeout));
 	}
 
 	@Override
@@ -123,7 +169,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	}
 
 	private boolean isRetryableIOException(IOException e) {
-		return (e instanceof ConnectException) || isRetryableClientTimeout(e);
+		return isRetryableClientTimeout(e) || isRetryableConnectException(e) || isRetryableUnknownHostException(e);
 	}
 
 	/**
@@ -132,6 +178,14 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	 */
 	private boolean isRetryableClientTimeout(IOException e) {
 		return (e instanceof SocketTimeoutException) && this.retryClientTimeout;
+	}
+
+	private boolean isRetryableConnectException(IOException e) {
+		return (e instanceof ConnectException) && this.retryConnectException;
+	}
+
+	private boolean isRetryableUnknownHostException(IOException e) {
+		return (e instanceof UnknownHostException) && this.retryUnknownHostException;
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
