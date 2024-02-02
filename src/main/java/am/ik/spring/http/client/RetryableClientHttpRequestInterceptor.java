@@ -155,15 +155,6 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		this.sensitiveHeaders = options.sensitiveHeaders;
 	}
 
-	/**
-	 * Use {@link #RetryableClientHttpRequestInterceptor(BackOff, Set, Consumer) instead}
-	 */
-	@Deprecated(forRemoval = true, since = "0.2.4")
-	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
-			boolean retryClientTimeout) {
-		this(backOff, retryableResponseStatuses, options -> options.retryClientTimeout(retryClientTimeout));
-	}
-
 	@Override
 	public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
 			throws IOException {
