@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -39,6 +40,17 @@ public class MockServerRunner {
 
 	public int port() {
 		return port;
+	}
+
+	public MockServerRunner addContext(String path, HttpHandler httpHandler) {
+		try {
+			this.httpServer.createContext(path, httpHandler);
+		}
+		catch (IllegalArgumentException e) {
+			this.httpServer.removeContext(path);
+			this.httpServer.createContext(path, httpHandler);
+		}
+		return this;
 	}
 
 	public void run() throws Exception {
