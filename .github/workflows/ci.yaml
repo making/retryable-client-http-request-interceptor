@@ -50,7 +50,7 @@ jobs:
     - name: Unit Tests for Spring 5
       run: |
         set -e
-        sed -e 's/<artifactId>retryable-client-http-request-interceptor/<artifactId>retryable-client-http-request-interceptor-spring5/' -e 's/<java.version>17/<java.version>8/' -e 's/<spring-boot.version>3.0.6/<spring-boot.version>2.7.11/' pom.xml > pom-spring5.xml        
+        sed -e 's/<artifactId>retryable-client-http-request-interceptor/<artifactId>retryable-client-http-request-interceptor-spring5/' -e 's/<java.version>17/<java.version>8/' -e 's/<spring-boot.version>3.1.5/<spring-boot.version>2.7.18/' pom.xml > pom-spring5.xml        
         ./mvnw -f pom-spring5.xml -V --no-transfer-progress clean test
     - name: Unit Tests for Spring 6
       run: |
