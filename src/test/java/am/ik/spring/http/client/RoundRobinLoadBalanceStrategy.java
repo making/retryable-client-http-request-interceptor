@@ -75,7 +75,6 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 			target = targets.get(count.get() % targets.size());
 		}
 		URI t = URI.create(target);
-		log.info("targetUri = {}", target);
 		return new HttpRequestWrapper(request) {
 			@Override
 			public URI getURI() {

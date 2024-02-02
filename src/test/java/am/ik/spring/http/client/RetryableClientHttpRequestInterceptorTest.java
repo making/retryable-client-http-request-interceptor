@@ -17,6 +17,7 @@ package am.ik.spring.http.client;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.ResourceAccessException;
@@ -57,8 +59,8 @@ class RetryableClientHttpRequestInterceptorTest {
 	@Test
 	void retry_fixed_recover() {
 		final RestTemplate restTemplate = new RestTemplate();
-		restTemplate.setInterceptors(
-				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
+		restTemplate.setInterceptors(Arrays.asList(new BasicAuthenticationInterceptor("username", "password"),
+				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
