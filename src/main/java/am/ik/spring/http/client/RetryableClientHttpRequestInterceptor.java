@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Toshiaki Maki <makingx@gmail.com>
+ * Copyright (C) 2023-2024 Toshiaki Maki <makingx@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import am.ik.spring.http.client.RetryLifecycle.ResponseOrException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -47,6 +48,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final boolean retryConnectException;
 
 	private final boolean retryUnknownHostException;
+
+	private final LoadBalanceStrategy loadBalanceStrategy;
+
+	private final RetryLifecycle retryLifecycle;
 
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
 		.unmodifiableSet(new HashSet<>(Arrays.asList( //
@@ -71,6 +76,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		private boolean retryUnknownHostException = true;
 
+		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
+
+		private RetryLifecycle retryLifecycle = RetryLifecycle.NOOP;
+
 		public Options retryClientTimeout(boolean retryClientTimeout) {
 			this.retryClientTimeout = retryClientTimeout;
 			return this;
@@ -86,6 +95,19 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		public Options loadBalanceStrategy(LoadBalanceStrategy loadBalanceStrategy) {
+			this.loadBalanceStrategy = loadBalanceStrategy;
+			if (loadBalanceStrategy instanceof RetryLifecycle) {
+				return this.retryLifecycle((RetryLifecycle) loadBalanceStrategy);
+			}
+			return this;
+		}
+
+		public Options retryLifecycle(RetryLifecycle retryLifecycle) {
+			this.retryLifecycle = retryLifecycle;
+			return this;
+		}
+
 	}
 
 	public RetryableClientHttpRequestInterceptor(BackOff backOff) {
@@ -98,6 +120,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		});
 	}
 
+	public RetryableClientHttpRequestInterceptor(BackOff backOff, Consumer<Options> configurer) {
+		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, configurer);
+	}
+
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
 			Consumer<Options> configurer) {
 		Options options = new Options();
@@ -107,6 +133,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		this.retryClientTimeout = options.retryClientTimeout;
 		this.retryConnectException = options.retryConnectException;
 		this.retryUnknownHostException = options.retryUnknownHostException;
+		this.loadBalanceStrategy = options.loadBalanceStrategy;
+		this.retryLifecycle = options.retryLifecycle;
 	}
 
 	/**
@@ -124,35 +152,47 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		final BackOffExecution backOffExecution = this.backOff.start();
 		for (int i = 1; i <= MAX_ATTEMPTS; i++) {
 			final long backOff = backOffExecution.nextBackOff();
+			final HttpRequest httpRequest = this.loadBalanceStrategy.choose(request);
 			try {
 				if (log.isDebugEnabled()) {
-					log.debug(String.format("Request %d: %s %s", i, request.getMethod(), request.getURI()));
-					log.debug(String.format("Request %d: %s", i, request.getHeaders()));
+					log.debug(String.format("Request %d: %s %s", i, httpRequest.getMethod(), httpRequest.getURI()));
+					log.debug(String.format("Request %d: %s", i, httpRequest.getHeaders()));
 				}
-				final ClientHttpResponse response = execution.execute(request, body);
+				final ClientHttpResponse response = execution.execute(httpRequest, body);
 				if (log.isDebugEnabled()) {
 					log.debug(String.format("Response %d: %s", i, response.getStatusCode()));
 					log.debug(String.format("Response %d: %s", i, response.getHeaders()));
 				}
-				if (!isRetryableHttpStatus(() -> response.getStatusCode().isError(),
-						() -> response.getStatusCode().value())) {
+				ErrorSupplier errorSupplier = () -> response.getStatusCode().isError();
+				if (!isRetryableHttpStatus(errorSupplier, () -> response.getStatusCode().value())) {
+					if (errorSupplier.isError()) {
+						this.retryLifecycle.onFailure(httpRequest, ResponseOrException.ofResponse(response));
+					}
+					else {
+						this.retryLifecycle.onSuccess(httpRequest, response);
+					}
 					return response;
 				}
 				if (backOff == BackOffExecution.STOP) {
 					log.warn("No longer retryable");
+					this.retryLifecycle.onNoLongerRetryable(httpRequest, ResponseOrException.ofResponse(response));
 					return response;
 				}
+				this.retryLifecycle.onRetry(httpRequest, ResponseOrException.ofResponse(response));
 			}
 			catch (IOException e) {
 				if (!isRetryableIOException(e)) {
+					this.retryLifecycle.onFailure(httpRequest, ResponseOrException.ofException(e));
 					throw e;
 				}
 				else if (backOff == BackOffExecution.STOP) {
 					log.warn("No longer retryable", e);
+					this.retryLifecycle.onNoLongerRetryable(httpRequest, ResponseOrException.ofException(e));
 					throw e;
 				}
 				else {
-					log.info(e.getMessage());
+					this.retryLifecycle.onRetry(httpRequest, ResponseOrException.ofException(e));
+					log.info(e.getClass().getName() + "\t" + e.getMessage());
 				}
 			}
 			if (log.isInfoEnabled()) {
