@@ -23,13 +23,17 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import am.ik.spring.http.client.RetryLifecycle.ResponseOrException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -52,6 +56,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
 	private final RetryLifecycle retryLifecycle;
+
+	private final Set<String> sensitiveHeaders;
 
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
 		.unmodifiableSet(new HashSet<>(Arrays.asList( //
@@ -80,6 +86,12 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		private RetryLifecycle retryLifecycle = RetryLifecycle.NOOP;
 
+		private Set<String> sensitiveHeaders = Collections.unmodifiableSet(new HashSet<>(Arrays.asList( //
+				HttpHeaders.AUTHORIZATION.toLowerCase(), //
+				HttpHeaders.PROXY_AUTHENTICATE.toLowerCase(), //
+				HttpHeaders.COOKIE.toLowerCase(), //
+				"x-amz-security-token")));
+
 		public Options retryClientTimeout(boolean retryClientTimeout) {
 			this.retryClientTimeout = retryClientTimeout;
 			return this;
@@ -105,6 +117,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		public Options retryLifecycle(RetryLifecycle retryLifecycle) {
 			this.retryLifecycle = retryLifecycle;
+			return this;
+		}
+
+		public Options sensitiveHeaders(Set<String> sensitiveHeaders) {
+			this.sensitiveHeaders = sensitiveHeaders;
 			return this;
 		}
 
@@ -135,6 +152,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		this.retryUnknownHostException = options.retryUnknownHostException;
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
+		this.sensitiveHeaders = options.sensitiveHeaders;
 	}
 
 	/**
@@ -156,12 +174,12 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			try {
 				if (log.isDebugEnabled()) {
 					log.debug(String.format("Request %d: %s %s", i, httpRequest.getMethod(), httpRequest.getURI()));
-					log.debug(String.format("Request %d: %s", i, httpRequest.getHeaders()));
+					log.debug(String.format("Request %d: %s", i, maskHeaders(httpRequest.getHeaders())));
 				}
 				final ClientHttpResponse response = execution.execute(httpRequest, body);
 				if (log.isDebugEnabled()) {
 					log.debug(String.format("Response %d: %s", i, response.getStatusCode()));
-					log.debug(String.format("Response %d: %s", i, response.getHeaders()));
+					log.debug(String.format("Response %d: %s", i, maskHeaders(response.getHeaders())));
 				}
 				ErrorSupplier errorSupplier = () -> response.getStatusCode().isError();
 				if (!isRetryableHttpStatus(errorSupplier, () -> response.getStatusCode().value())) {
@@ -244,6 +262,32 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		int getStatus() throws IOException;
 
+	}
+
+	private Map<String, List<String>> maskHeaders(HttpHeaders headers) {
+		return headers.entrySet().stream().map(entry -> {
+			if (sensitiveHeaders.contains(entry.getKey().toLowerCase())) {
+				return new Map.Entry<String, List<String>>() {
+					@Override
+					public String getKey() {
+						return entry.getKey();
+					}
+
+					@Override
+					public List<String> getValue() {
+						return entry.getValue().stream().map(s -> "(masked)").collect(Collectors.toList());
+					}
+
+					@Override
+					public List<String> setValue(List<String> value) {
+						return value;
+					}
+				};
+			}
+			else {
+				return entry;
+			}
+		}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 	}
 
 }
