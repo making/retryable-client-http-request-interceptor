@@ -68,11 +68,12 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 	@Override
 	public HttpRequest choose(HttpRequest request) {
 		List<HostAndPort> targets = urlResolver.resolve(HostAndPort.of(request.getURI()));
-		int i = count.getAndIncrement() % targets.size();
+		int numberOfTargets = targets.size();
+		int i = count.getAndIncrement() % numberOfTargets;
 		HostAndPort target = targets.get(i);
-		if (failedTargets.containsKey(target)) {
-			log.info("{} is marked as a failed target.", target);
-			target = targets.get(count.get() % targets.size());
+		while (failedTargets.containsKey(target) && numberOfTargets > failedTargets.size()) {
+			log.debug("{} is marked as a failed target.", target);
+			target = targets.get(count.getAndIncrement() % numberOfTargets);
 		}
 		final HostAndPort t = target;
 		return new HttpRequestWrapper(request) {
