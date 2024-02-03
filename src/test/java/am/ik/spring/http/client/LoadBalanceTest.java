@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import am.ik.spring.http.client.UrlResolver.HostAndPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,8 +58,8 @@ class LoadBalanceTest {
 		ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
 		taskScheduler.afterPropertiesSet();
 		RoundRobinLoadBalanceStrategy retryTargetStrategy = new RoundRobinLoadBalanceStrategy(
-				service -> Arrays.asList("http://localhost:9997", "http://localhost:9998"), taskScheduler,
-				Duration.ofSeconds(1), Duration.ofSeconds(1), Clock.systemUTC());
+				service -> Arrays.asList(HostAndPort.of("localhost", 9997), HostAndPort.of("localhost", 9998)),
+				taskScheduler, Duration.ofSeconds(1), Duration.ofSeconds(1), Clock.systemUTC());
 		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
 				new FixedBackOff(100, 10), options -> options.loadBalanceStrategy(retryTargetStrategy))));
 

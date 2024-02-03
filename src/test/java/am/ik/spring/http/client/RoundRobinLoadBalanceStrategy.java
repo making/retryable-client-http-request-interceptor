@@ -22,11 +22,11 @@ import java.time.Instant;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import am.ik.spring.http.client.UrlResolver.HostAndPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +43,7 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 	private final Logger log = LoggerFactory.getLogger(RoundRobinLoadBalanceStrategy.class);
 
-	private final ConcurrentMap<String, FailedTargetCache> failedTargets = new ConcurrentHashMap<>();
+	private final ConcurrentMap<HostAndPort, FailedTargetCache> failedTargets = new ConcurrentHashMap<>();
 
 	private final Clock clock;
 
@@ -52,10 +52,10 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 		this.urlResolver = urlResolver;
 		this.clock = clock;
 		taskScheduler.scheduleAtFixedRate(() -> {
-			Iterator<Map.Entry<String, FailedTargetCache>> iterator = failedTargets.entrySet().iterator();
+			Iterator<Map.Entry<HostAndPort, FailedTargetCache>> iterator = failedTargets.entrySet().iterator();
 			Instant now = clock.instant();
 			while (iterator.hasNext()) {
-				Map.Entry<String, FailedTargetCache> cache = iterator.next();
+				Map.Entry<HostAndPort, FailedTargetCache> cache = iterator.next();
 				if (cache.getValue().failedAt.plusSeconds(ttl.toSeconds()).isBefore(now)) {
 					log.info("Remove {}", cache.getValue());
 					iterator.remove();
@@ -67,45 +67,40 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 	@Override
 	public HttpRequest choose(HttpRequest request) {
-		List<String> targets = urlResolver.resolve(request.getURI().getHost());
+		List<HostAndPort> targets = urlResolver.resolve(HostAndPort.of(request.getURI()));
 		int i = count.getAndIncrement() % targets.size();
-		String target = targets.get(i);
+		HostAndPort target = targets.get(i);
 		if (failedTargets.containsKey(target)) {
 			log.info("{} is marked as a failed target.", target);
 			target = targets.get(count.get() % targets.size());
 		}
-		URI t = URI.create(target);
+		final HostAndPort t = target;
 		return new HttpRequestWrapper(request) {
 			@Override
 			public URI getURI() {
-				return UriComponentsBuilder.fromUri(request.getURI())
-					.host(t.getHost())
-					.port(t.getPort())
-					.build()
-					.toUri();
+				return UriComponentsBuilder.fromUri(request.getURI()).host(t.host()).port(t.port()).build().toUri();
 			}
 		};
 	}
 
 	@Override
 	public void onRetry(HttpRequest request, ResponseOrException responseOrException) {
-		URI uri = request.getURI();
-		String targetUrl = uri.getScheme() + "://" + uri.getHost() + ":" + uri.getPort();
-		failedTargets.computeIfAbsent(targetUrl, k -> new FailedTargetCache(targetUrl, this.clock.instant()));
+		HostAndPort target = HostAndPort.of(request.getURI());
+		failedTargets.computeIfAbsent(target, k -> new FailedTargetCache(target, this.clock.instant()));
 	}
 
 	static class FailedTargetCache {
 
-		private final String target;
+		private final HostAndPort target;
 
 		private final Instant failedAt;
 
-		public FailedTargetCache(String target, Instant failedAt) {
+		public FailedTargetCache(HostAndPort target, Instant failedAt) {
 			this.target = target;
 			this.failedAt = failedAt;
 		}
 
-		public String target() {
+		public HostAndPort target() {
 			return target;
 		}
 
@@ -116,21 +111,6 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 		@Override
 		public String toString() {
 			return "FailedTargetCache{" + "target='" + target + '\'' + ", failedAt=" + failedAt + '}';
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o)
-				return true;
-			if (o == null || getClass() != o.getClass())
-				return false;
-			FailedTargetCache that = (FailedTargetCache) o;
-			return Objects.equals(target, that.target);
-		}
-
-		@Override
-		public int hashCode() {
-			return Objects.hash(target);
 		}
 
 	}
