@@ -47,8 +47,8 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 	private final Clock clock;
 
-	public RoundRobinLoadBalanceStrategy(UrlResolver urlResolver, TaskScheduler taskScheduler, Duration cleanupInterval,
-			Duration ttl, Clock clock) {
+	public RoundRobinLoadBalanceStrategy(UrlResolver urlResolver, TaskScheduler taskScheduler, Duration ttl,
+			Duration cleanupInterval, Clock clock) {
 		this.urlResolver = urlResolver;
 		this.clock = clock;
 		taskScheduler.scheduleAtFixedRate(() -> {
