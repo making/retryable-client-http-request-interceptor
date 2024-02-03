@@ -104,8 +104,8 @@ jobs:
             -Dgpg.passphrase=${GPG_PASSPHRASE} \
             -DnexusUrl=https://oss.sonatype.org \
             -DautoReleaseAfterClose=true \
-            -DaltDeploymentRepository=repo::default::https://oss.sonatype.org/service/local/staging/deploy/maven2
-            -DskipTests=true \
+            -DaltDeploymentRepository=repo::default::https://oss.sonatype.org/service/local/staging/deploy/maven2 \
+            -DskipTests=true
         mvn -V \
             clean \
             javadoc:jar \
