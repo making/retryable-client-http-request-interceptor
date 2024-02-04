@@ -19,25 +19,25 @@ import java.net.URI;
 import java.util.List;
 import java.util.Objects;
 
-public interface UrlResolver {
+public interface EndpointResolver {
 
-	List<HostAndPort> resolve(HostAndPort service);
+	List<Endpoint> resolve(Endpoint service);
 
-	class HostAndPort {
+	class Endpoint {
 
 		private final String host;
 
 		private final int port;
 
-		public static HostAndPort of(String host, int port) {
-			return new HostAndPort(host, port);
+		public static Endpoint of(String host, int port) {
+			return new Endpoint(host, port);
 		}
 
-		public static HostAndPort of(URI uri) {
-			return new HostAndPort(uri.getHost(), uri.getPort());
+		public static Endpoint of(URI uri) {
+			return new Endpoint(uri.getHost(), uri.getPort());
 		}
 
-		private HostAndPort(String host, int port) {
+		private Endpoint(String host, int port) {
 			this.host = host;
 			this.port = port;
 		}
@@ -56,7 +56,7 @@ public interface UrlResolver {
 				return true;
 			if (o == null || getClass() != o.getClass())
 				return false;
-			HostAndPort that = (HostAndPort) o;
+			Endpoint that = (Endpoint) o;
 			return port == that.port && Objects.equals(host, that.host);
 		}
 
@@ -67,7 +67,7 @@ public interface UrlResolver {
 
 		@Override
 		public String toString() {
-			return "HostAndPort{" + "host='" + host + '\'' + ", port=" + port + '}';
+			return "Endpoint{" + "host='" + host + '\'' + ", port=" + port + '}';
 		}
 
 	}

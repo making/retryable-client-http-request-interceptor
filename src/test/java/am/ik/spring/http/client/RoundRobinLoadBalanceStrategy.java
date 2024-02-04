@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import am.ik.spring.http.client.UrlResolver.HostAndPort;
+import am.ik.spring.http.client.EndpointResolver.Endpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,25 +37,25 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, RetryLifecycle {
 
-	private final UrlResolver urlResolver;
+	private final EndpointResolver endpointResolver;
 
 	private final AtomicInteger count = new AtomicInteger(0);
 
 	private final Logger log = LoggerFactory.getLogger(RoundRobinLoadBalanceStrategy.class);
 
-	private final ConcurrentMap<HostAndPort, FailedTargetCache> failedTargets = new ConcurrentHashMap<>();
+	private final ConcurrentMap<Endpoint, FailedEndpointCache> failedEndpoints = new ConcurrentHashMap<>();
 
 	private final Clock clock;
 
-	public RoundRobinLoadBalanceStrategy(UrlResolver urlResolver, TaskScheduler taskScheduler, Duration ttl,
+	public RoundRobinLoadBalanceStrategy(EndpointResolver endpointResolver, TaskScheduler taskScheduler, Duration ttl,
 			Duration cleanupInterval, Clock clock) {
-		this.urlResolver = urlResolver;
+		this.endpointResolver = endpointResolver;
 		this.clock = clock;
 		taskScheduler.scheduleAtFixedRate(() -> {
-			Iterator<Map.Entry<HostAndPort, FailedTargetCache>> iterator = failedTargets.entrySet().iterator();
+			Iterator<Map.Entry<Endpoint, FailedEndpointCache>> iterator = failedEndpoints.entrySet().iterator();
 			Instant now = clock.instant();
 			while (iterator.hasNext()) {
-				Map.Entry<HostAndPort, FailedTargetCache> cache = iterator.next();
+				Map.Entry<Endpoint, FailedEndpointCache> cache = iterator.next();
 				if (cache.getValue().failedAt().plusSeconds(ttl.toSeconds()).isBefore(now)) {
 					log.info("Remove {}", cache.getValue());
 					iterator.remove();
@@ -67,20 +67,20 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 	@Override
 	public HttpRequest choose(HttpRequest request) {
-		List<HostAndPort> targets = urlResolver.resolve(HostAndPort.of(request.getURI()));
-		int numberOfTargets = targets.size();
-		HostAndPort target = null;
-		for (int n = 0; n < numberOfTargets; n++) {
-			int i = count.getAndIncrement() % numberOfTargets;
-			target = targets.get(i);
-			if (failedTargets.containsKey(target)) {
-				log.debug("{} is marked as a failed target.", target);
+		List<Endpoint> endpoints = endpointResolver.resolve(Endpoint.of(request.getURI()));
+		int numberOfEndpoints = endpoints.size();
+		Endpoint endpoint = null;
+		for (int n = 0; n < numberOfEndpoints; n++) {
+			int i = count.getAndIncrement() % numberOfEndpoints;
+			endpoint = endpoints.get(i);
+			if (failedEndpoints.containsKey(endpoint)) {
+				log.debug("{} is marked as a failed endpoint.", endpoint);
 			}
 			else {
 				break;
 			}
 		}
-		final HostAndPort t = target != null ? target : HostAndPort.of(request.getURI());
+		final Endpoint t = endpoint != null ? endpoint : Endpoint.of(request.getURI());
 		return new HttpRequestWrapper(request) {
 			@Override
 			public URI getURI() {
@@ -91,23 +91,23 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 	@Override
 	public void onRetry(HttpRequest request, ResponseOrException responseOrException) {
-		HostAndPort target = HostAndPort.of(request.getURI());
-		failedTargets.computeIfAbsent(target, k -> new FailedTargetCache(target, this.clock.instant()));
+		Endpoint endpoint = Endpoint.of(request.getURI());
+		failedEndpoints.computeIfAbsent(endpoint, k -> new FailedEndpointCache(endpoint, this.clock.instant()));
 	}
 
-	static class FailedTargetCache {
+	static class FailedEndpointCache {
 
-		private final HostAndPort target;
+		private final Endpoint endpoint;
 
 		private final Instant failedAt;
 
-		public FailedTargetCache(HostAndPort target, Instant failedAt) {
-			this.target = target;
+		public FailedEndpointCache(Endpoint endpoint, Instant failedAt) {
+			this.endpoint = endpoint;
 			this.failedAt = failedAt;
 		}
 
-		public HostAndPort target() {
-			return target;
+		public Endpoint endpoint() {
+			return endpoint;
 		}
 
 		public Instant failedAt() {
@@ -116,7 +116,7 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 
 		@Override
 		public String toString() {
-			return "FailedTargetCache{" + "target='" + target + '\'' + ", failedAt=" + failedAt + '}';
+			return "FailedEndpointCache{" + "endpoint='" + endpoint + '\'' + ", failedAt=" + failedAt + '}';
 		}
 
 	}
