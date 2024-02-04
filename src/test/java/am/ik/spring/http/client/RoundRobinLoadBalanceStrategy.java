@@ -56,7 +56,7 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 			Instant now = clock.instant();
 			while (iterator.hasNext()) {
 				Map.Entry<HostAndPort, FailedTargetCache> cache = iterator.next();
-				if (cache.getValue().failedAt.plusSeconds(ttl.toSeconds()).isBefore(now)) {
+				if (cache.getValue().failedAt().plusSeconds(ttl.toSeconds()).isBefore(now)) {
 					log.info("Remove {}", cache.getValue());
 					iterator.remove();
 				}
@@ -69,13 +69,18 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 	public HttpRequest choose(HttpRequest request) {
 		List<HostAndPort> targets = urlResolver.resolve(HostAndPort.of(request.getURI()));
 		int numberOfTargets = targets.size();
-		int i = count.getAndIncrement() % numberOfTargets;
-		HostAndPort target = targets.get(i);
-		while (failedTargets.containsKey(target) && numberOfTargets > failedTargets.size()) {
-			log.debug("{} is marked as a failed target.", target);
-			target = targets.get(count.getAndIncrement() % numberOfTargets);
+		HostAndPort target = null;
+		for (int n = 0; n < numberOfTargets; n++) {
+			int i = count.getAndIncrement() % numberOfTargets;
+			target = targets.get(i);
+			if (failedTargets.containsKey(target)) {
+				log.debug("{} is marked as a failed target.", target);
+			}
+			else {
+				break;
+			}
 		}
-		final HostAndPort t = target;
+		final HostAndPort t = target != null ? target : HostAndPort.of(request.getURI());
 		return new HttpRequestWrapper(request) {
 			@Override
 			public URI getURI() {
