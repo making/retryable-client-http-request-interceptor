@@ -17,12 +17,15 @@ package am.ik.spring.http.client;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,11 +35,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
+import org.springframework.http.client.support.HttpRequestWrapper;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import static am.ik.spring.http.client.RetryableClientHttpRequestInterceptor.DEFAULT_RETRYABLE_RESPONSE_STATUSES;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,8 +69,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
-		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
 	}
 
 	@Test
@@ -77,8 +82,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
-		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("503");
 	}
 
 	@Test
@@ -90,8 +95,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
-		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("503");
 	}
 
 	@Test
@@ -105,8 +110,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
-		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
 	}
 
 	@Test
@@ -146,8 +151,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
-		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
 	}
 
 	@Test
@@ -159,8 +164,8 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
-		assertThat(response.toString()).contains("503"); // to work with both Spring 5 and
-		// 6
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("503");
 	}
 
 	@Test
@@ -185,9 +190,9 @@ class RetryableClientHttpRequestInterceptorTest {
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", port), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
-		assertThat(response.toString()).contains("200"); // to work with both Spring 5 and
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
 		latch.countDown();
-		// 6
 	}
 
 	@Test
@@ -200,6 +205,43 @@ class RetryableClientHttpRequestInterceptorTest {
 				() -> restTemplate.getForEntity(String.format("http://localhost:%d/hello", port), String.class))
 			.isInstanceOf(ResourceAccessException.class)
 			.hasCauseInstanceOf(ConnectException.class);
+	}
+
+	@Test
+	void unknown_host_recover() {
+		final RestTemplate restTemplate = new RestTemplate();
+		final AtomicInteger count = new AtomicInteger(0);
+		final LoadBalanceStrategy loadBalanceStrategy = request -> new HttpRequestWrapper(request) {
+			@Override
+			public URI getURI() {
+				return UriComponentsBuilder.fromUri(request.getURI())
+					.port(mockServerRunner.port())
+					// `getURI` is called twice before invoking a http request actually
+					.host(count.getAndIncrement() < 2 ? "noanswer.example.com" : "127.0.0.1")
+					.build()
+					.toUri();
+			}
+		};
+		// other request factories may not throw UnknownHostException
+		restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory());
+		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
+				new FixedBackOff(100, 10), options -> options.loadBalanceStrategy(loadBalanceStrategy))));
+		final ResponseEntity<String> response = restTemplate.getForEntity("http://hello-service/hello", String.class);
+		assertThat(response.getBody()).isEqualTo("Hello World!");
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
+	}
+
+	@Test
+	void unknown_host_recover_fail() {
+		final RestTemplate restTemplate = new RestTemplate();
+		// other request factories may not throw UnknownHostException
+		restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory());
+		restTemplate.setInterceptors(
+				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
+		assertThatThrownBy(() -> restTemplate.getForEntity("http://noanswer.example.com/hello", String.class))
+			.isInstanceOf(ResourceAccessException.class)
+			.hasCauseInstanceOf(UnknownHostException.class);
 	}
 
 	private static class NoOpResponseErrorHandler implements ResponseErrorHandler {
