@@ -211,16 +211,18 @@ class RetryableClientHttpRequestInterceptorTest {
 	void unknown_host_recover() {
 		final RestTemplate restTemplate = new RestTemplate();
 		final AtomicInteger count = new AtomicInteger(0);
-		final LoadBalanceStrategy loadBalanceStrategy = request -> new HttpRequestWrapper(request) {
-			@Override
-			public URI getURI() {
-				return UriComponentsBuilder.fromUri(request.getURI())
-					.port(mockServerRunner.port())
-					// `getURI` is called twice before invoking a http request actually
-					.host(count.getAndIncrement() < 2 ? "noanswer.example.com" : "127.0.0.1")
-					.build()
-					.toUri();
-			}
+		final LoadBalanceStrategy loadBalanceStrategy = request -> {
+			count.getAndIncrement();
+			return new HttpRequestWrapper(request) {
+				@Override
+				public URI getURI() {
+					return UriComponentsBuilder.fromUri(request.getURI())
+						.port(mockServerRunner.port())
+						.host(count.get() == 1 ? "noanswer.example.com" : "127.0.0.1")
+						.build()
+						.toUri();
+				}
+			};
 		};
 		// other request factories may not throw UnknownHostException
 		restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory());
