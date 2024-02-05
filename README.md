@@ -51,19 +51,25 @@ public MyClient(RestClient.Builder builder){
 }
 ```
 * How to use exponential backoff
-```java
-new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))
-```
-
+    ```java
+    new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))
+    ```
 * How to configure `retryableResponseStatuses` (default: 408, 425, 429, 500, 503, 504)
-```java
-new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), Set.of(500, 503))
-```
-
+    ```java
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), Set.of(500, 503))
+    ```
 * How to configure whether to `retryClientTimeout` (default: true)
-```java
-new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), DEFAULT_RETRYABLE_RESPONSE_STATUSES, false)
-```
+    ```java
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryClientTimeout(false))
+    ```
+* How to configure whether to `retryConnectException` (default: true)
+    ```java
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryConnectException(false))
+    ```
+* How to configure whether to `retryUnknownHostException` (default: true)
+    ```java
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryUnknownHostException(false))
+    ```
 
 ### License
 
