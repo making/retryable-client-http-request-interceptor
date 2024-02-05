@@ -80,11 +80,11 @@ public class RoundRobinLoadBalanceStrategy implements LoadBalanceStrategy, Retry
 				break;
 			}
 		}
-		final Endpoint t = endpoint != null ? endpoint : Endpoint.of(request.getURI());
+		final Endpoint ep = endpoint != null ? endpoint : Endpoint.of(request.getURI());
 		return new HttpRequestWrapper(request) {
 			@Override
 			public URI getURI() {
-				return UriComponentsBuilder.fromUri(request.getURI()).host(t.host()).port(t.port()).build().toUri();
+				return UriComponentsBuilder.fromUri(request.getURI()).host(ep.host()).port(ep.port()).build().toUri();
 			}
 		};
 	}
