@@ -70,6 +70,11 @@ public MyClient(RestClient.Builder builder){
     ```java
     new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryUnknownHostException(false))
     ```
+* How to enable client-side load balancing during retries (Since 0.3.0)
+    ```java
+    LoadBalanceStrategy loadBalanceStrategy = /* Bing your own strategy */;
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.loadBalanceStrategy(loadBalanceStrategy))
+    ```
 
 ### License
 
