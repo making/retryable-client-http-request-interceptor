@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import am.ik.spring.http.client.RetryLifecycle.ResponseOrException;
@@ -59,7 +60,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final RetryLifecycle retryLifecycle;
 
-	private final Set<String> sensitiveHeaders;
+	private final Predicate<String> sensitiveHeaderPredicate;
 
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
 		.unmodifiableSet(new HashSet<>(Arrays.asList( //
@@ -88,12 +89,12 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		private RetryLifecycle retryLifecycle = RetryLifecycle.NOOP;
 
-		private Set<String> sensitiveHeaders = Collections.unmodifiableSet(new HashSet<>(Arrays.asList( //
-				HttpHeaders.AUTHORIZATION.toLowerCase(), //
-				HttpHeaders.PROXY_AUTHENTICATE.toLowerCase(), //
-				HttpHeaders.COOKIE.toLowerCase(), //
-				HttpHeaders.SET_COOKIE.toLowerCase(), //
-				"x-amz-security-token")));
+		public static final Set<String> DEFAULT_SENSITIVE_HEADERS = Collections.unmodifiableSet(new HashSet<>(
+				Arrays.asList("authorization", "proxy-authenticate", "cookie", "set-cookie", "x-amz-security-token")));
+
+		private Set<String> sensitiveHeaders = DEFAULT_SENSITIVE_HEADERS;
+
+		private Predicate<String> sensitiveHeaderPredicate = null;
 
 		public Options retryClientTimeout(boolean retryClientTimeout) {
 			this.retryClientTimeout = retryClientTimeout;
@@ -128,6 +129,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		public Options sensitiveHeaderPredicate(Predicate<String> sensitiveHeaderPredicate) {
+			this.sensitiveHeaderPredicate = sensitiveHeaderPredicate;
+			return this;
+		}
+
 	}
 
 	public RetryableClientHttpRequestInterceptor(BackOff backOff) {
@@ -155,7 +161,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		this.retryUnknownHostException = options.retryUnknownHostException;
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
-		this.sensitiveHeaders = options.sensitiveHeaders;
+		this.sensitiveHeaderPredicate = options.sensitiveHeaderPredicate == null ? options.sensitiveHeaders::contains
+				: options.sensitiveHeaderPredicate;
 	}
 
 	@Override
@@ -276,7 +283,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private Map<String, List<String>> maskHeaders(HttpHeaders headers) {
 		return headers.entrySet().stream().map(entry -> {
-			if (sensitiveHeaders.contains(entry.getKey().toLowerCase())) {
+			if (sensitiveHeaderPredicate.test(entry.getKey().toLowerCase())) {
 				return new Map.Entry<String, List<String>>() {
 					@Override
 					public String getKey() {
