@@ -9,14 +9,13 @@ on:
     - src/**
     - pom.xml
     - .github/workflows/ci.yaml
-  pull_request_target:
+  pull_request:
     branches:
     - develop
     - main
     paths:
     - src/**
     - pom.xml
-    - .github/workflows/ci.yaml
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,10 +23,26 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'liberica'
+        cache: maven
+    - name: Unit Tests for Spring 5
+      run: |
+        set -e
+        sed -e 's/<artifactId>retryable-client-http-request-interceptor/<artifactId>retryable-client-http-request-interceptor-spring5/' -e 's/<java.version>17/<java.version>8/' -e 's/<spring-boot.version>3.2.5/<spring-boot.version>2.7.18/' pom.xml > pom-spring5.xml        
+        ./mvnw -f pom-spring5.xml -V --no-transfer-progress clean test
+    - name: Unit Tests for Spring 6
+      run: |
+        set -e
+        ./mvnw -V --no-transfer-progress clean test
     - name: Import Secrets
+      if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
       id: secrets
-      uses: hashicorp/vault-action@v2.5.0
+      uses: hashicorp/vault-action@v3.0.0
       with:
         exportToken: true
         exportEnv: true
@@ -39,23 +54,6 @@ jobs:
           kv/data/cicd/sonatype password | SONATYPE_PASSWORD ;
           kv/data/cicd/gpg secring | GPG_SECRING ;
           kv/data/cicd/gpg passphrase | GPG_PASSPHRASE ;
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'liberica'
-        cache: maven
-        gpg-private-key: ${{ steps.secrets.outputs.GPG_SECRING }}
-        gpg-passphrase: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
-    - name: Unit Tests for Spring 5
-      run: |
-        set -e
-        sed -e 's/<artifactId>retryable-client-http-request-interceptor/<artifactId>retryable-client-http-request-interceptor-spring5/' -e 's/<java.version>17/<java.version>8/' -e 's/<spring-boot.version>3.2.5/<spring-boot.version>2.7.18/' pom.xml > pom-spring5.xml        
-        ./mvnw -f pom-spring5.xml -V --no-transfer-progress clean test
-    - name: Unit Tests for Spring 6
-      run: |
-        set -e
-        ./mvnw -V --no-transfer-progress clean test
     - name: Deploy to sonatype-snapshots
       if: github.ref == 'refs/heads/develop'
       run: |
@@ -73,12 +71,22 @@ jobs:
         EOF
         CURRENT_VERSION=$(grep '<version>' pom.xml | head -n 1 | sed -e 's|<version>||g' -e 's|</version>||g' -e 's| ||g' |  tr -d '\t')
         if [ "${CURRENT_VERSION}" = "$(echo ${CURRENT_VERSION} | grep "\-SNAPSHOT")" ];then
-          ./mvnw -f pom-spring5.xml -V clean deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
-          ./mvnw -V clean deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
+          ./mvnw -f pom-spring5.xml -V deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots        
+          ./mvnw -V deploy -s settings.xml --no-transfer-progress -DskipTests=true -DserverId=sonatype-snapshots
         fi
+    - name: Set up JDK 17 with GPG
+      if: github.ref == 'refs/heads/main'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'liberica'
+        cache: maven
+        gpg-private-key: ${{ steps.secrets.outputs.GPG_SECRING }}
+        gpg-passphrase: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
     - name: Deploy to sonatype-releases
       if: github.ref == 'refs/heads/main'
       run: |
+        set -e
         cat > settings.xml <<EOF
         <settings>
           <servers>
@@ -124,4 +132,4 @@ jobs:
     - name: Revoke token
       if: always()
       run: |
-        curl -X POST -s -H "X-Vault-Token: ${VAULT_TOKEN}" ${{ secrets.VAULT_ADDR }}/v1/auth/token/revoke-self
+        curl -X POST -s -H "X-Vault-Token: ${VAULT_TOKEN}" ${{ secrets.VAULT_ADDR }}/v1/auth/token/revoke-self || true
