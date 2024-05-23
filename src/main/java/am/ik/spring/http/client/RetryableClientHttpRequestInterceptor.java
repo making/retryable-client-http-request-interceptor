@@ -20,12 +20,14 @@ import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.URLConnection;
 import java.net.UnknownHostException;
+import java.nio.channels.UnresolvedAddressException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -226,15 +228,31 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	 * @see {@link URLConnection#setReadTimeout(int)}
 	 */
 	private boolean isRetryableClientTimeout(IOException e) {
-		return (e instanceof SocketTimeoutException) && this.retryClientTimeout;
+		return (e instanceof SocketTimeoutException || e.getCause() instanceof TimeoutException || e.getClass()
+			.getName()
+			.equals("java.net.http.HttpTimeoutException") /*
+															 * Check class name for the
+															 * compatibility with Java
+															 * 8-10
+															 */) && this.retryClientTimeout;
 	}
 
 	private boolean isRetryableConnectException(IOException e) {
-		return (e instanceof ConnectException) && this.retryConnectException;
+		return (e instanceof ConnectException || e.getClass()
+			.getName()
+			.equals("java.net.http.HttpConnectTimeoutException") /*
+																	 * Check class name
+																	 * for the
+																	 * compatibility with
+																	 * Java 8-10
+																	 */) && this.retryConnectException;
 	}
 
 	private boolean isRetryableUnknownHostException(IOException e) {
-		return (e instanceof UnknownHostException) && this.retryUnknownHostException;
+		return (e instanceof UnknownHostException
+				|| (e instanceof ConnectException && e.getCause() instanceof ConnectException
+						&& e.getCause().getCause() instanceof UnresolvedAddressException))
+				&& this.retryUnknownHostException;
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
