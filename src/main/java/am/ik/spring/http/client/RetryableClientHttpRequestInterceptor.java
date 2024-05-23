@@ -92,6 +92,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				HttpHeaders.AUTHORIZATION.toLowerCase(), //
 				HttpHeaders.PROXY_AUTHENTICATE.toLowerCase(), //
 				HttpHeaders.COOKIE.toLowerCase(), //
+				HttpHeaders.SET_COOKIE.toLowerCase(), //
 				"x-amz-security-token")));
 
 		public Options retryClientTimeout(boolean retryClientTimeout) {
