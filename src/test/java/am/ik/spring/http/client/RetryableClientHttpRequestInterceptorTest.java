@@ -15,27 +15,37 @@
  */
 package am.ik.spring.http.client;
 
+import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.nio.channels.UnresolvedAddressException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import org.springframework.beans.BeanUtils;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.client.support.HttpRequestWrapper;
+import org.springframework.util.ClassUtils;
+import org.springframework.util.ReflectionUtils;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.ResourceAccessException;
@@ -53,6 +63,7 @@ class RetryableClientHttpRequestInterceptorTest {
 
 	@BeforeEach
 	void init() throws Exception {
+		Assertions.setMaxStackTraceElementsDisplayed(1000);
 		this.mockServerRunner.run();
 	}
 
@@ -61,11 +72,38 @@ class RetryableClientHttpRequestInterceptorTest {
 		this.mockServerRunner.destroy();
 	}
 
-	@Test
-	void retry_fixed_recover() {
+	static Stream<ClientHttpRequestFactory> requestFactories() {
+		return Stream
+			.of("org.springframework.http.client.SimpleClientHttpRequestFactory",
+					"org.springframework.http.client.OkHttp3ClientHttpRequestFactory",
+					"org.springframework.http.client.JdkClientHttpRequestFactory")
+			.filter(className -> ClassUtils.isPresent(className, null))
+			.map(className -> {
+				try {
+					return (ClientHttpRequestFactory) BeanUtils.instantiateClass(ClassUtils.forName(className, null));
+				}
+				catch (ClassNotFoundException e) {
+					throw new IllegalStateException(e);
+				}
+			});
+	}
+
+	static Stream<ClientHttpRequestFactory> requestFactoriesReadTimeout100() {
+		return requestFactories().map(requestFactory -> {
+			Method setReadTimeout = ReflectionUtils.findMethod(requestFactory.getClass(), "setReadTimeout", int.class);
+			ReflectionUtils.makeAccessible(setReadTimeout);
+			ReflectionUtils.invokeMethod(setReadTimeout, requestFactory, 100);
+			return requestFactory;
+		});
+	}
+
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void retry_fixed_recover(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(Arrays.asList(new BasicAuthenticationInterceptor("username", "password"),
 				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
@@ -73,12 +111,14 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("200");
 	}
 
-	@Test
-	void retry_fixed_fail() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void retry_fixed_fail(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
@@ -86,12 +126,14 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("503");
 	}
 
-	@Test
-	void not_recoverable() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void not_recoverable(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(Collections.singletonList(
 				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), Collections.singleton(500))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
@@ -99,11 +141,10 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("503");
 	}
 
-	@Test
-	void timeout_recover() {
+	@ParameterizedTest
+	@MethodSource("requestFactoriesReadTimeout100")
+	void timeout_recover(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
-		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setReadTimeout(100);
 		restTemplate.setRequestFactory(requestFactory);
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2))));
@@ -114,25 +155,28 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("200");
 	}
 
-	@Test
-	void timeout_fail() {
+	@ParameterizedTest
+	@MethodSource("requestFactoriesReadTimeout100")
+	void timeout_fail(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
-		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setReadTimeout(100);
 		restTemplate.setRequestFactory(requestFactory);
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		assertThatThrownBy(() -> restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)
-			.hasCauseInstanceOf(SocketTimeoutException.class);
+			.matches(e -> {
+				Throwable cause = e.getCause();
+				return cause instanceof SocketTimeoutException
+						|| (cause instanceof IOException && cause.getCause() instanceof TimeoutException)
+						|| cause.getClass().getName().equals("java.net.http.HttpTimeoutException");
+			});
 	}
 
-	@Test
-	void no_retry_for_timeout() {
+	@ParameterizedTest
+	@MethodSource("requestFactoriesReadTimeout100")
+	void no_retry_for_timeout(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
-		final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setReadTimeout(100);
 		restTemplate.setRequestFactory(requestFactory);
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2),
@@ -140,14 +184,21 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThatThrownBy(() -> restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)
-			.hasCauseInstanceOf(SocketTimeoutException.class);
+			.matches(e -> {
+				Throwable cause = e.getCause();
+				return cause instanceof SocketTimeoutException
+						|| (cause instanceof IOException && cause.getCause() instanceof TimeoutException)
+						|| cause.getClass().getName().equals("java.net.http.HttpTimeoutException");
+			});
 	}
 
-	@Test
-	void retry_exponential_recover() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void retry_exponential_recover(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new ExponentialBackOff(100, 2))));
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
@@ -155,12 +206,14 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("200");
 	}
 
-	@Test
-	void retry_exponential_fail() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void retry_exponential_fail(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
 		restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Oops!");
@@ -168,8 +221,9 @@ class RetryableClientHttpRequestInterceptorTest {
 		assertThat(response.toString()).contains("503");
 	}
 
-	@Test
-	void connection_refused_recover() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void connection_refused_recover(ClientHttpRequestFactory requestFactory) {
 		int port = this.mockServerRunner.port() + 1;
 		CountDownLatch latch = new CountDownLatch(1);
 		ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
@@ -187,6 +241,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 10))));
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/hello", port), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
@@ -195,20 +250,23 @@ class RetryableClientHttpRequestInterceptorTest {
 		latch.countDown();
 	}
 
-	@Test
-	void connection_refused_fail() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void connection_refused_fail(ClientHttpRequestFactory requestFactory) {
 		int port = this.mockServerRunner.port() + 1;
 		final RestTemplate restTemplate = new RestTemplate();
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 10))));
+		restTemplate.setRequestFactory(requestFactory);
 		assertThatThrownBy(
 				() -> restTemplate.getForEntity(String.format("http://localhost:%d/hello", port), String.class))
 			.isInstanceOf(ResourceAccessException.class)
 			.hasCauseInstanceOf(ConnectException.class);
 	}
 
-	@Test
-	void unknown_host_recover() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void unknown_host_recover(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
 		final AtomicInteger count = new AtomicInteger(0);
 		final LoadBalanceStrategy loadBalanceStrategy = request -> {
@@ -224,26 +282,30 @@ class RetryableClientHttpRequestInterceptorTest {
 				}
 			};
 		};
-		// other request factories may not throw UnknownHostException
-		restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory());
 		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
 				new FixedBackOff(100, 10), options -> options.loadBalanceStrategy(loadBalanceStrategy))));
+		restTemplate.setRequestFactory(requestFactory);
 		final ResponseEntity<String> response = restTemplate.getForEntity("http://hello-service/hello", String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
 		// to work with both Spring 5 and 6
 		assertThat(response.toString()).contains("200");
 	}
 
-	@Test
-	void unknown_host_recover_fail() {
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void unknown_host_recover_fail(ClientHttpRequestFactory requestFactory) {
 		final RestTemplate restTemplate = new RestTemplate();
-		// other request factories may not throw UnknownHostException
-		restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory());
 		restTemplate.setInterceptors(
 				Collections.singletonList(new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 1))));
+		restTemplate.setRequestFactory(requestFactory);
 		assertThatThrownBy(() -> restTemplate.getForEntity("http://noanswer.example.com/hello", String.class))
 			.isInstanceOf(ResourceAccessException.class)
-			.hasCauseInstanceOf(UnknownHostException.class);
+			.matches(e -> {
+				Throwable cause = e.getCause();
+				return cause instanceof UnknownHostException
+						|| (cause instanceof ConnectException && cause.getCause() instanceof ConnectException
+								&& cause.getCause().getCause() instanceof UnresolvedAddressException);
+			});
 	}
 
 	private static class NoOpResponseErrorHandler implements ResponseErrorHandler {
