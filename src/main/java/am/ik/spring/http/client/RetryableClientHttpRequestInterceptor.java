@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
@@ -173,14 +174,40 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			final long backOff = backOffExecution.nextBackOff();
 			final HttpRequest httpRequest = this.loadBalanceStrategy.choose(request);
 			try {
+				final long begin = System.currentTimeMillis();
 				if (log.isDebugEnabled()) {
-					log.debug(String.format("Request %d: %s %s", i, httpRequest.getMethod(), httpRequest.getURI()));
-					log.debug(String.format("Request %d: %s", i, maskHeaders(httpRequest.getHeaders())));
+					StringBuilder message = new StringBuilder("type=req attempts=").append(i)
+						.append(" method=")
+						.append(httpRequest.getMethod())
+						.append(" url=\"")
+						.append(httpRequest.getURI())
+						.append("\" ");
+					maskHeaders(httpRequest.getHeaders())
+						.forEach((k, v) -> message.append(k.toLowerCase(Locale.US).replace("-", "_"))
+							.append("=\"")
+							.append(String.join(",", v))
+							.append("\" "));
+					log.debug(message.toString().trim());
 				}
 				final ClientHttpResponse response = execution.execute(httpRequest, body);
 				if (log.isDebugEnabled()) {
-					log.debug(String.format("Response %d: %s", i, response.getStatusCode()));
-					log.debug(String.format("Response %d: %s", i, maskHeaders(response.getHeaders())));
+					long duration = System.currentTimeMillis() - begin;
+					StringBuilder message = new StringBuilder("type=res attempts=").append(i)
+						.append(" method=")
+						.append(httpRequest.getMethod())
+						.append(" url=\"")
+						.append(httpRequest.getURI())
+						.append("\" response_code=")
+						.append(response.getStatusCode().value())
+						.append(" duration=")
+						.append(duration)
+						.append(" ");
+					maskHeaders(response.getHeaders())
+						.forEach((k, v) -> message.append(k.toLowerCase(Locale.US).replace("-", "_"))
+							.append("=\"")
+							.append(String.join(",", v))
+							.append("\" "));
+					log.debug(message.toString().trim());
 				}
 				ErrorSupplier errorSupplier = () -> response.getStatusCode().isError();
 				if (!isRetryableHttpStatus(errorSupplier, () -> response.getStatusCode().value())) {
@@ -193,7 +220,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 					return response;
 				}
 				if (backOff == BackOffExecution.STOP) {
-					log.warn("No longer retryable");
+					if (log.isWarnEnabled()) {
+						log.warn(String.format(
+								"type=fin attempts=%d method=%s url=\"%s\" reason=\"No longer retryable\"", i,
+								httpRequest.getMethod(), httpRequest.getURI()));
+					}
 					this.retryLifecycle.onNoLongerRetryable(httpRequest, ResponseOrException.ofResponse(response));
 					return response;
 				}
@@ -205,17 +236,27 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 					throw e;
 				}
 				else if (backOff == BackOffExecution.STOP) {
-					log.warn("No longer retryable", e);
+					if (log.isWarnEnabled()) {
+						log.warn(String.format(
+								"type=fin attempts=%d method=%s url=\"%s\" reason=\"No longer retryable\"", i,
+								httpRequest.getMethod(), httpRequest.getURI()), e);
+					}
 					this.retryLifecycle.onNoLongerRetryable(httpRequest, ResponseOrException.ofException(e));
 					throw e;
 				}
 				else {
 					this.retryLifecycle.onRetry(httpRequest, ResponseOrException.ofException(e));
-					log.info(e.getClass().getName() + "\t" + e.getMessage());
+					if (log.isInfoEnabled()) {
+						log.info(String.format(
+								"type=exp attempts=%d method=%s url=\"%s\" exception_class=\"%s\" exception_message=\"%s\"",
+								i, httpRequest.getMethod(), httpRequest.getURI(), e.getClass().getName(),
+								e.getMessage()));
+					}
 				}
 			}
 			if (log.isInfoEnabled()) {
-				log.info(String.format("Wait interval (%s)", backOffExecution));
+				log.info(String.format("type=wtg attempts=%d method=%s url=\"%s\" backoff=\"%s\"", i,
+						httpRequest.getMethod(), httpRequest.getURI(), backOffExecution));
 			}
 			try {
 				Thread.sleep(backOff);
