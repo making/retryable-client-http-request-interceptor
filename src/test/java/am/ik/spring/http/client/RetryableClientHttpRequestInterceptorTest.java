@@ -37,8 +37,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeanUtils;
+import org.springframework.core.SpringVersion;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
@@ -61,8 +64,11 @@ class RetryableClientHttpRequestInterceptorTest {
 
 	private final MockServerRunner mockServerRunner = new MockServerRunner(9999);
 
+	private final Logger logger = LoggerFactory.getLogger(RetryableClientHttpRequestInterceptorTest.class);
+
 	@BeforeEach
 	void init() throws Exception {
+		logger.info("Spring Version: {}", SpringVersion.getVersion());
 		Assertions.setMaxStackTraceElementsDisplayed(1000);
 		this.mockServerRunner.run();
 	}
