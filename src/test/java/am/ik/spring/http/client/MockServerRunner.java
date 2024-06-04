@@ -63,6 +63,7 @@ public class MockServerRunner {
 				final PrintWriter printWriter = new PrintWriter(stream);
 				final boolean success = counter.getAndIncrement() % 3 == 2;
 				final String body = success ? "Hello World!" : "Oops!";
+				exchange.getResponseHeaders().add("Etag", "W/\"6b80-Ybsq/K6GwwqrYkAsFxqDXGC7DoM\"");
 				exchange.sendResponseHeaders(success ? 200 : 503, body.length());
 				printWriter.write(body);
 				printWriter.flush();
