@@ -95,6 +95,14 @@
 				<version>3.5.1</version>
 			</plugin>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>3.10.1</version>
+				<configuration>
+					<doclint>none</doclint>
+				</configuration>
+			</plugin>
+			<plugin>
 				<groupId>io.spring.javaformat</groupId>
 				<artifactId>spring-javaformat-maven-plugin</artifactId>
 				<version>0.0.43</version>
