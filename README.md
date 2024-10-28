@@ -9,7 +9,7 @@ For Spring 6+ / Spring Boot 3+
 <dependency>
 	<groupId>am.ik.spring</groupId>
 	<artifactId>retryable-client-http-request-interceptor</artifactId>
-	<version>0.5.1</version>
+	<version>0.6.0</version>
 </dependency>
 ```
 
