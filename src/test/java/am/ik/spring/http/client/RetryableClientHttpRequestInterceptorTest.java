@@ -56,7 +56,7 @@ import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import static am.ik.spring.http.client.RetryIOExceptionPredicate.CLIENT_TIMEOUT;
+import static am.ik.spring.http.client.RetryableIOExceptionPredicate.CLIENT_TIMEOUT;
 import static am.ik.spring.http.client.RetryableClientHttpRequestInterceptor.DEFAULT_RETRYABLE_RESPONSE_STATUSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -187,7 +187,7 @@ class RetryableClientHttpRequestInterceptorTest {
 		restTemplate.setRequestFactory(requestFactory);
 		restTemplate.setInterceptors(Collections.singletonList(
 				new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), DEFAULT_RETRYABLE_RESPONSE_STATUSES,
-						options -> options.removeRetryIOExceptionPredicate(CLIENT_TIMEOUT))));
+						options -> options.removeRetryableIOException(CLIENT_TIMEOUT))));
 		assertThatThrownBy(() -> restTemplate
 			.getForEntity(String.format("http://localhost:%d/slow", this.mockServerRunner.port()), String.class))
 			.isInstanceOf(ResourceAccessException.class)

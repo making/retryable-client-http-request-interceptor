@@ -9,7 +9,7 @@ import java.nio.channels.UnresolvedAddressException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
-public enum RetryIOExceptionPredicate implements Predicate<IOException> {
+public enum RetryableIOExceptionPredicate implements Predicate<IOException> {
 
 	/**
 	 * @see {@link URLConnection#setConnectTimeout(int)}
@@ -46,6 +46,12 @@ public enum RetryIOExceptionPredicate implements Predicate<IOException> {
 			return (e instanceof UnknownHostException
 					|| (e instanceof ConnectException && e.getCause() instanceof ConnectException
 							&& e.getCause().getCause() instanceof UnresolvedAddressException));
+		}
+	},
+	ANY {
+		@Override
+		public boolean test(IOException e) {
+			return true;
 		}
 	}
 

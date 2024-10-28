@@ -46,7 +46,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final Set<Integer> retryableResponseStatuses;
 
-	private final Predicate<IOException> retryIOExceptionPredicate;
+	private final Predicate<IOException> retryableIOExceptionPredicate;
 
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
@@ -71,12 +71,12 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	public static class Options {
 
-		private final Set<Predicate<IOException>> retryIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>() {
+		private final Set<Predicate<IOException>> retryableIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>() {
 			{
 				// Default predicates
-				add(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
-				add(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
-				add(RetryIOExceptionPredicate.UNKNOWN_HOST);
+				add(RetryableIOExceptionPredicate.CLIENT_TIMEOUT);
+				add(RetryableIOExceptionPredicate.CONNECT_TIMEOUT);
+				add(RetryableIOExceptionPredicate.UNKNOWN_HOST);
 			}
 		};
 
@@ -93,58 +93,58 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		/**
 		 * Consider using
-		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT)}
+		 * {@code addRetryableIOException(RetryableIOExceptionPredicate.CLIENT_TIMEOUT)}
 		 * or
-		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT)}
+		 * {@code removeRetryableIOException(RetryableIOExceptionPredicate.CLIENT_TIMEOUT)}
 		 */
 		@Deprecated
 		public Options retryClientTimeout(boolean retryClientTimeout) {
 			if (retryClientTimeout) {
-				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
+				return this.addRetryableIOException(RetryableIOExceptionPredicate.CLIENT_TIMEOUT);
 			}
 			else {
-				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
+				return this.removeRetryableIOException(RetryableIOExceptionPredicate.CLIENT_TIMEOUT);
 			}
 		}
 
 		/**
 		 * Consider using
-		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT)}
+		 * {@code addRetryableIOException(RetryableIOExceptionPredicate.CONNECT_TIMEOUT)}
 		 * or
-		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT)}
+		 * {@code removeRetryableIOException(RetryableIOExceptionPredicate.CONNECT_TIMEOUT)}
 		 */
 		@Deprecated
 		public Options retryConnectException(boolean retryConnectException) {
 			if (retryConnectException) {
-				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
+				return this.addRetryableIOException(RetryableIOExceptionPredicate.CONNECT_TIMEOUT);
 			}
 			else {
-				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
+				return this.removeRetryableIOException(RetryableIOExceptionPredicate.CONNECT_TIMEOUT);
 			}
 		}
 
 		/**
 		 * Consider using
-		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST)} or
-		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST)}
+		 * {@code addRetryableIOException(RetryableIOExceptionPredicate.UNKNOWN_HOST)} or
+		 * {@code removeRetryableIOException(RetryableIOExceptionPredicate.UNKNOWN_HOST)}
 		 */
 		@Deprecated
 		public Options retryUnknownHostException(boolean retryUnknownHostException) {
 			if (retryUnknownHostException) {
-				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST);
+				return this.addRetryableIOException(RetryableIOExceptionPredicate.UNKNOWN_HOST);
 			}
 			else {
-				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST);
+				return this.removeRetryableIOException(RetryableIOExceptionPredicate.UNKNOWN_HOST);
 			}
 		}
 
-		public Options addRetryIOExceptionPredicate(Predicate<IOException> retryIOExceptionPredicate) {
-			this.retryIOExceptionPredicates.add(retryIOExceptionPredicate);
+		public Options addRetryableIOException(Predicate<IOException> retryableIOExceptionPredicate) {
+			this.retryableIOExceptionPredicates.add(retryableIOExceptionPredicate);
 			return this;
 		}
 
-		public Options removeRetryIOExceptionPredicate(Predicate<IOException> retryIOExceptionPredicate) {
-			this.retryIOExceptionPredicates.remove(retryIOExceptionPredicate);
+		public Options removeRetryableIOException(Predicate<IOException> retryableIOExceptionPredicate) {
+			this.retryableIOExceptionPredicates.remove(retryableIOExceptionPredicate);
 			return this;
 		}
 
@@ -193,7 +193,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		configurer.accept(options);
 		this.backOff = backOff;
 		this.retryableResponseStatuses = retryableResponseStatuses;
-		this.retryIOExceptionPredicate = options.retryIOExceptionPredicates.stream().reduce(e -> false, Predicate::or);
+		this.retryableIOExceptionPredicate = options.retryableIOExceptionPredicates.stream()
+			.reduce(e -> false, Predicate::or);
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
 		this.sensitiveHeaderPredicate = options.sensitiveHeaderPredicate == null ? options.sensitiveHeaders::contains
@@ -307,7 +308,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	}
 
 	private boolean isRetryableIOException(IOException e) {
-		return this.retryIOExceptionPredicate.test(e);
+		return this.retryableIOExceptionPredicate.test(e);
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
