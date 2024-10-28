@@ -16,19 +16,14 @@
 package am.ik.spring.http.client;
 
 import java.io.IOException;
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
-import java.net.URLConnection;
-import java.net.UnknownHostException;
-import java.nio.channels.UnresolvedAddressException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -51,11 +46,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final Set<Integer> retryableResponseStatuses;
 
-	private final boolean retryClientTimeout;
-
-	private final boolean retryConnectException;
-
-	private final boolean retryUnknownHostException;
+	private final Predicate<IOException> retryIOExceptionPredicate;
 
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
@@ -80,11 +71,14 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	public static class Options {
 
-		private boolean retryClientTimeout = true;
-
-		private boolean retryConnectException = true;
-
-		private boolean retryUnknownHostException = true;
+		private final Set<Predicate<IOException>> retryIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>() {
+			{
+				// Default predicates
+				add(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
+				add(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
+				add(RetryIOExceptionPredicate.UNKNOWN_HOST);
+			}
+		};
 
 		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
 
@@ -97,18 +91,60 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		private Predicate<String> sensitiveHeaderPredicate = null;
 
+		/**
+		 * Consider using
+		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT)}
+		 * or
+		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT)}
+		 */
+		@Deprecated
 		public Options retryClientTimeout(boolean retryClientTimeout) {
-			this.retryClientTimeout = retryClientTimeout;
-			return this;
+			if (retryClientTimeout) {
+				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
+			}
+			else {
+				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CLIENT_TIMEOUT);
+			}
 		}
 
+		/**
+		 * Consider using
+		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT)}
+		 * or
+		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT)}
+		 */
+		@Deprecated
 		public Options retryConnectException(boolean retryConnectException) {
-			this.retryConnectException = retryConnectException;
+			if (retryConnectException) {
+				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
+			}
+			else {
+				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.CONNECT_TIMEOUT);
+			}
+		}
+
+		/**
+		 * Consider using
+		 * {@code addRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST)} or
+		 * {@code removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST)}
+		 */
+		@Deprecated
+		public Options retryUnknownHostException(boolean retryUnknownHostException) {
+			if (retryUnknownHostException) {
+				return this.addRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST);
+			}
+			else {
+				return this.removeRetryIOExceptionPredicate(RetryIOExceptionPredicate.UNKNOWN_HOST);
+			}
+		}
+
+		public Options addRetryIOExceptionPredicate(Predicate<IOException> retryIOExceptionPredicate) {
+			this.retryIOExceptionPredicates.add(retryIOExceptionPredicate);
 			return this;
 		}
 
-		public Options retryUnknownHostException(boolean retryUnknownHostException) {
-			this.retryUnknownHostException = retryUnknownHostException;
+		public Options removeRetryIOExceptionPredicate(Predicate<IOException> retryIOExceptionPredicate) {
+			this.retryIOExceptionPredicates.remove(retryIOExceptionPredicate);
 			return this;
 		}
 
@@ -157,9 +193,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		configurer.accept(options);
 		this.backOff = backOff;
 		this.retryableResponseStatuses = retryableResponseStatuses;
-		this.retryClientTimeout = options.retryClientTimeout;
-		this.retryConnectException = options.retryConnectException;
-		this.retryUnknownHostException = options.retryUnknownHostException;
+		this.retryIOExceptionPredicate = options.retryIOExceptionPredicates.stream().reduce(e -> false, Predicate::or);
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
 		this.sensitiveHeaderPredicate = options.sensitiveHeaderPredicate == null ? options.sensitiveHeaders::contains
@@ -273,39 +307,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	}
 
 	private boolean isRetryableIOException(IOException e) {
-		return isRetryableClientTimeout(e) || isRetryableConnectException(e) || isRetryableUnknownHostException(e);
-	}
-
-	/**
-	 * @see {@link URLConnection#setConnectTimeout(int)}
-	 * @see {@link URLConnection#setReadTimeout(int)}
-	 */
-	private boolean isRetryableClientTimeout(IOException e) {
-		return (e instanceof SocketTimeoutException || e.getCause() instanceof TimeoutException || e.getClass()
-			.getName()
-			.equals("java.net.http.HttpTimeoutException") /*
-															 * Check class name for the
-															 * compatibility with Java
-															 * 8-10
-															 */) && this.retryClientTimeout;
-	}
-
-	private boolean isRetryableConnectException(IOException e) {
-		return (e instanceof ConnectException || e.getClass()
-			.getName()
-			.equals("java.net.http.HttpConnectTimeoutException") /*
-																	 * Check class name
-																	 * for the
-																	 * compatibility with
-																	 * Java 8-10
-																	 */) && this.retryConnectException;
-	}
-
-	private boolean isRetryableUnknownHostException(IOException e) {
-		return (e instanceof UnknownHostException
-				|| (e instanceof ConnectException && e.getCause() instanceof ConnectException
-						&& e.getCause().getCause() instanceof UnresolvedAddressException))
-				&& this.retryUnknownHostException;
+		return this.retryIOExceptionPredicate.test(e);
 	}
 
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
