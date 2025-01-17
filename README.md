@@ -20,7 +20,7 @@ For Spring 5 / Spring Boot 2
 <dependency>
 	<groupId>am.ik.spring</groupId>
 	<artifactId>retryable-client-http-request-interceptor-spring5</artifactId>
-	<version>0.5.1</version>
+	<version>0.6.0</version>
 </dependency>
 ```
 
