@@ -60,15 +60,15 @@ public MyClient(RestClient.Builder builder){
     ```
 * How to configure whether to `retryClientTimeout` (default: true)
     ```java
-    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryClientTimeout(false))
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.removeRetryableIOException(RetryableIOExceptionPredicate.CLIENT_TIMEOUT))
     ```
 * How to configure whether to `retryConnectException` (default: true)
     ```java
-    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryConnectException(false))
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.removeRetryableIOException(RetryableIOExceptionPredicate.CONNECT_TIMEOUT))
     ```
 * How to configure whether to `retryUnknownHostException` (default: true)
     ```java
-    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.retryUnknownHostException(false))
+    new RetryableClientHttpRequestInterceptor(new FixedBackOff(100, 2), options -> options.removeRetryableIOException(RetryableIOExceptionPredicate.UNKNOWN_HOST))
     ```
 * How to enable client-side load balancing during retries (Since 0.3.0)
     ```java
