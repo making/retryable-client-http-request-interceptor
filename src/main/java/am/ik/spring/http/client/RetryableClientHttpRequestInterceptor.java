@@ -15,8 +15,10 @@
  */
 package am.ik.spring.http.client;
 
+import am.ik.spring.http.client.RetryLifecycle.ResponseOrException;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -27,11 +29,8 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-
-import am.ik.spring.http.client.RetryLifecycle.ResponseOrException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
@@ -71,14 +70,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	public static class Options {
 
-		private final Set<Predicate<IOException>> retryableIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>() {
-			{
-				// Default predicates
-				add(RetryableIOExceptionPredicate.CLIENT_TIMEOUT);
-				add(RetryableIOExceptionPredicate.CONNECT_TIMEOUT);
-				add(RetryableIOExceptionPredicate.UNKNOWN_HOST);
-			}
-		};
+		private final Set<Predicate<IOException>> retryableIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>(
+				RetryableIOExceptionPredicate.defaults());
 
 		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
 
@@ -143,8 +136,30 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		public Options addRetryableIOExceptions(
+				Collection<? extends Predicate<IOException>> retryableIOExceptionPredicates) {
+			this.retryableIOExceptionPredicates.addAll(retryableIOExceptionPredicates);
+			return this;
+		}
+
+		public Options addRetryableIOExceptions(Predicate<IOException>... retryableIOExceptionPredicates) {
+			this.addRetryableIOExceptions(Arrays.asList(retryableIOExceptionPredicates));
+			return this;
+		}
+
 		public Options removeRetryableIOException(Predicate<IOException> retryableIOExceptionPredicate) {
 			this.retryableIOExceptionPredicates.remove(retryableIOExceptionPredicate);
+			return this;
+		}
+
+		public Options removeRetryableIOExceptions(
+				Collection<? extends Predicate<IOException>> retryableIOExceptionPredicate) {
+			this.retryableIOExceptionPredicates.removeAll(retryableIOExceptionPredicate);
+			return this;
+		}
+
+		public Options removeRetryableIOExceptions(Predicate<IOException>... retryableIOExceptionPredicate) {
+			this.removeRetryableIOExceptions(Arrays.asList(retryableIOExceptionPredicate));
 			return this;
 		}
 
