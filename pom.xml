@@ -6,7 +6,7 @@
 
 	<groupId>am.ik.spring</groupId>
 	<artifactId>retryable-client-http-request-interceptor</artifactId>
-	<version>0.6.1-SNAPSHOT</version>
+	<version>0.7.0-SNAPSHOT</version>
 	<name>retryable-client-http-request-interceptor</name>
 	<description>RetryableClientHttpRequestInterceptor for Spring RestTemplate
 	</description>
