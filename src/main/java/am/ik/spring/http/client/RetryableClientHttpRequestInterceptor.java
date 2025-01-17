@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.commons.logging.Log;
@@ -46,6 +47,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final Set<Integer> retryableResponseStatuses;
 
 	private final Predicate<IOException> retryableIOExceptionPredicate;
+
+	private final RetryableHttpResponsePredicate retryableHttpResponsePredicate;
+
+	private final Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper;
 
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
@@ -72,6 +77,10 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		private final Set<Predicate<IOException>> retryableIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>(
 				RetryableIOExceptionPredicate.defaults());
+
+		private RetryableHttpResponsePredicate retryableHttpResponsePredicate = null;
+
+		private Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper = null;
 
 		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
 
@@ -163,6 +172,22 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		/**
+		 * Set a custom <code>RetryableHttpResponsePredicate</code>. If this is set,
+		 * {@link RetryableClientHttpRequestInterceptor#retryableResponseStatuses} is no
+		 * longer respected.
+		 */
+		public Options retryableHttpResponsePredicate(RetryableHttpResponsePredicate retryableHttpResponsePredicate) {
+			this.retryableHttpResponsePredicate = retryableHttpResponsePredicate;
+			return this;
+		}
+
+		public Options clientHttpResponseMapper(
+				Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper) {
+			this.clientHttpResponseMapper = clientHttpResponseMapper;
+			return this;
+		}
+
 		public Options loadBalanceStrategy(LoadBalanceStrategy loadBalanceStrategy) {
 			this.loadBalanceStrategy = loadBalanceStrategy;
 			if (loadBalanceStrategy instanceof RetryLifecycle) {
@@ -210,6 +235,9 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		this.retryableResponseStatuses = retryableResponseStatuses;
 		this.retryableIOExceptionPredicate = options.retryableIOExceptionPredicates.stream()
 			.reduce(e -> false, Predicate::or);
+		this.retryableHttpResponsePredicate = options.retryableHttpResponsePredicate == null
+				? new DefaultRetryableHttpResponsePredicate() : options.retryableHttpResponsePredicate;
+		this.clientHttpResponseMapper = options.clientHttpResponseMapper;
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
 		this.sensitiveHeaderPredicate = options.sensitiveHeaderPredicate == null ? options.sensitiveHeaders::contains
@@ -241,7 +269,9 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 							.append("\" "));
 					log.debug(message.toString().trim());
 				}
-				final ClientHttpResponse response = execution.execute(httpRequest, body);
+				ClientHttpResponse delegate = execution.execute(httpRequest, body);
+				ClientHttpResponse response = this.clientHttpResponseMapper == null ? delegate
+						: this.clientHttpResponseMapper.apply(delegate);
 				if (log.isDebugEnabled()) {
 					long duration = System.currentTimeMillis() - begin;
 					StringBuilder message = new StringBuilder("type=res attempts=").append(i)
@@ -263,9 +293,8 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 							.append("\" "));
 					log.debug(message.toString().trim());
 				}
-				ErrorSupplier errorSupplier = () -> response.getStatusCode().isError();
-				if (!isRetryableHttpStatus(errorSupplier, () -> response.getStatusCode().value())) {
-					if (errorSupplier.isError()) {
+				if (!this.retryableHttpResponsePredicate.isRetryableHttpResponse(response)) {
+					if (response.getStatusCode().isError()) {
 						this.retryLifecycle.onFailure(httpRequest, ResponseOrException.ofResponse(response));
 					}
 					else {
@@ -326,12 +355,22 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		return this.retryableIOExceptionPredicate.test(e);
 	}
 
+	private class DefaultRetryableHttpResponsePredicate implements RetryableHttpResponsePredicate {
+
+		@Override
+		public boolean isRetryableHttpResponse(ClientHttpResponse response) throws IOException {
+			return isRetryableHttpStatus(() -> response.getStatusCode().isError(),
+					() -> response.getStatusCode().value());
+		}
+
+	}
+
+	// to work with both Spring 5 (HttpStatus) and 6 (HttpStatusCode)
 	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
 			throws IOException {
 		return errorSupplier.isError() && this.retryableResponseStatuses.contains(statusSupplier.getStatus());
 	}
 
-	// to work with both Spring 5 (HttpStatus) and 6 (HttpStatusCode)
 	private interface ErrorSupplier {
 
 		boolean isError() throws IOException;
