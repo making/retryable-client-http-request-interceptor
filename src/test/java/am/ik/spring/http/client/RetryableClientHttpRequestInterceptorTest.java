@@ -31,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
-
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +38,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.SpringVersion;
 import org.springframework.http.ResponseEntity;
@@ -56,8 +54,8 @@ import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import static am.ik.spring.http.client.RetryableIOExceptionPredicate.CLIENT_TIMEOUT;
 import static am.ik.spring.http.client.RetryableClientHttpRequestInterceptor.DEFAULT_RETRYABLE_RESPONSE_STATUSES;
+import static am.ik.spring.http.client.RetryableIOExceptionPredicate.CLIENT_TIMEOUT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -309,9 +307,8 @@ class RetryableClientHttpRequestInterceptorTest {
 			.isInstanceOf(ResourceAccessException.class)
 			.matches(e -> {
 				Throwable cause = e.getCause();
-				return cause instanceof UnknownHostException
-						|| (cause instanceof ConnectException && cause.getCause() instanceof ConnectException
-								&& cause.getCause().getCause() instanceof UnresolvedAddressException);
+				return cause instanceof UnknownHostException || (cause instanceof ConnectException
+						&& cause.getCause() instanceof UnresolvedAddressException);
 			});
 	}
 
