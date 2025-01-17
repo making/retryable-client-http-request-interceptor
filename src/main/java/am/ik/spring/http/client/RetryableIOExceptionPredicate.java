@@ -6,6 +6,10 @@ import java.net.SocketTimeoutException;
 import java.net.URLConnection;
 import java.net.UnknownHostException;
 import java.nio.channels.UnresolvedAddressException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
@@ -53,6 +57,11 @@ public enum RetryableIOExceptionPredicate implements Predicate<IOException> {
 		public boolean test(IOException e) {
 			return true;
 		}
+	};
+
+	static Set<Predicate<IOException>> defaults() {
+		return Collections
+			.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(CLIENT_TIMEOUT, CONNECT_TIMEOUT, UNKNOWN_HOST)));
 	}
 
 }
