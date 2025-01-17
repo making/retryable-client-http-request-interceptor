@@ -59,7 +59,7 @@ public enum RetryableIOExceptionPredicate implements Predicate<IOException> {
 		}
 	};
 
-	static Set<Predicate<IOException>> defaults() {
+	public static Set<Predicate<IOException>> defaults() {
 		return Collections
 			.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(CLIENT_TIMEOUT, CONNECT_TIMEOUT, UNKNOWN_HOST)));
 	}
