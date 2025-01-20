@@ -39,22 +39,51 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.BackOffExecution;
 
+/**
+ * Interceptor for retrying HTTP requests with customizable backoff strategies, retryable
+ * conditions, and load-balancing support.
+ */
 public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestInterceptor {
 
+	/**
+	 * Backoff policy to determine retry intervals.
+	 */
 	private final BackOff backOff;
 
+	/**
+	 * Set of HTTP status codes that are considered retryable.
+	 */
 	private final Set<Integer> retryableResponseStatuses;
 
+	/**
+	 * Predicate to determine if an IOException is retryable.
+	 */
 	private final Predicate<IOException> retryableIOExceptionPredicate;
 
+	/**
+	 * Custom predicate to determine if an HTTP response is retryable. Exclusive of
+	 * {@link #retryableResponseStatuses}.
+	 */
 	private final RetryableHttpResponsePredicate retryableHttpResponsePredicate;
 
+	/**
+	 * Strategy to apply load balancing across requests.
+	 */
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
+	/**
+	 * Lifecycle hooks for retry operations.
+	 */
 	private final RetryLifecycle retryLifecycle;
 
+	/**
+	 * Predicate to identify sensitive HTTP headers for masking in logs.
+	 */
 	private final Predicate<String> sensitiveHeaderPredicate;
 
+	/**
+	 * Default retryable HTTP status codes.
+	 */
 	public static Set<Integer> DEFAULT_RETRYABLE_RESPONSE_STATUSES = Collections
 		.unmodifiableSet(new HashSet<>(Arrays.asList( //
 				408 /* Request Timeout */, //
@@ -70,22 +99,47 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	private final Log log = LogFactory.getLog(RetryableClientHttpRequestInterceptor.class);
 
+	/**
+	 * Configuration options for customizing retry behavior, load balancing, and header
+	 * sensitivity.
+	 */
 	public static class Options {
 
+		/**
+		 * Predicates to determine if an IOException is retryable.
+		 */
 		private final Set<Predicate<IOException>> retryableIOExceptionPredicates = new LinkedHashSet<Predicate<IOException>>(
 				RetryableIOExceptionPredicate.defaults());
 
+		/**
+		 * Predicate for retryable HTTP responses.
+		 */
 		private RetryableHttpResponsePredicate retryableHttpResponsePredicate = null;
 
+		/**
+		 * Strategy for load balancing.
+		 */
 		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
 
+		/**
+		 * Lifecycle hooks for retry events.
+		 */
 		private RetryLifecycle retryLifecycle = RetryLifecycle.NOOP;
 
+		/**
+		 * Default sensitive headers.
+		 */
 		public static final Set<String> DEFAULT_SENSITIVE_HEADERS = Collections.unmodifiableSet(new HashSet<>(
 				Arrays.asList("authorization", "proxy-authenticate", "cookie", "set-cookie", "x-amz-security-token")));
 
+		/**
+		 * Set of headers considered sensitive and masked in logs.
+		 */
 		private Set<String> sensitiveHeaders = DEFAULT_SENSITIVE_HEADERS;
 
+		/**
+		 * Predicate for sensitive headers.
+		 */
 		private Predicate<String> sensitiveHeaderPredicate = null;
 
 		/**
@@ -135,6 +189,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			}
 		}
 
+		/**
+		 * Adds a predicate for determining retryable IOExceptions.
+		 * @param retryableIOExceptionPredicate the predicate to add
+		 * @return the updated options
+		 */
 		public Options addRetryableIOException(Predicate<IOException> retryableIOExceptionPredicate) {
 			this.retryableIOExceptionPredicates.add(retryableIOExceptionPredicate);
 			return this;
@@ -151,6 +210,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		/**
+		 * Removes a predicate for determining retryable IOExceptions.
+		 * @param retryableIOExceptionPredicate the predicate to remove
+		 * @return the updated options
+		 */
 		public Options removeRetryableIOException(Predicate<IOException> retryableIOExceptionPredicate) {
 			this.retryableIOExceptionPredicates.remove(retryableIOExceptionPredicate);
 			return this;
@@ -168,15 +232,22 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		}
 
 		/**
-		 * Set a custom <code>RetryableHttpResponsePredicate</code>. If this is set,
+		 * Sets a custom <code>RetryableHttpResponsePredicate</code>. If this is set,
 		 * {@link RetryableClientHttpRequestInterceptor#retryableResponseStatuses} is no
 		 * longer respected.
+		 * @param retryableHttpResponsePredicate the predicate to set
+		 * @return the updated options
 		 */
 		public Options retryableHttpResponsePredicate(RetryableHttpResponsePredicate retryableHttpResponsePredicate) {
 			this.retryableHttpResponsePredicate = retryableHttpResponsePredicate;
 			return this;
 		}
 
+		/**
+		 * Configures the load balancing strategy.
+		 * @param loadBalanceStrategy the load balancing strategy to use
+		 * @return the updated options
+		 */
 		public Options loadBalanceStrategy(LoadBalanceStrategy loadBalanceStrategy) {
 			this.loadBalanceStrategy = loadBalanceStrategy;
 			if (loadBalanceStrategy instanceof RetryLifecycle) {
@@ -185,16 +256,31 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
+		/**
+		 * Sets lifecycle hooks for retry operations.
+		 * @param retryLifecycle the retry lifecycle to use
+		 * @return the updated options
+		 */
 		public Options retryLifecycle(RetryLifecycle retryLifecycle) {
 			this.retryLifecycle = retryLifecycle;
 			return this;
 		}
 
+		/**
+		 * Sets the sensitive headers to be masked in logs.
+		 * @param sensitiveHeaders the set of sensitive headers
+		 * @return the updated options
+		 */
 		public Options sensitiveHeaders(Set<String> sensitiveHeaders) {
 			this.sensitiveHeaders = sensitiveHeaders;
 			return this;
 		}
 
+		/**
+		 * Sets a custom predicate for identifying sensitive headers.
+		 * @param sensitiveHeaderPredicate the predicate to set
+		 * @return the updated options
+		 */
 		public Options sensitiveHeaderPredicate(Predicate<String> sensitiveHeaderPredicate) {
 			this.sensitiveHeaderPredicate = sensitiveHeaderPredicate;
 			return this;
@@ -202,20 +288,43 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	}
 
+	/**
+	 * Constructs an interceptor with a backoff policy and default retryable response
+	 * statuses.
+	 * @param backOff the backoff policy
+	 */
 	public RetryableClientHttpRequestInterceptor(BackOff backOff) {
 		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, __ -> {
 		});
 	}
 
+	/**
+	 * Constructs an interceptor with a backoff policy and specified retryable response
+	 * statuses.
+	 * @param backOff the backoff policy
+	 * @param retryableResponseStatuses the set of retryable HTTP status codes
+	 */
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses) {
 		this(backOff, retryableResponseStatuses, __ -> {
 		});
 	}
 
+	/**
+	 * Constructs an interceptor with a backoff policy and a custom configuration.
+	 * @param backOff the backoff policy
+	 * @param configurer a consumer to configure additional options
+	 */
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Consumer<Options> configurer) {
 		this(backOff, DEFAULT_RETRYABLE_RESPONSE_STATUSES, configurer);
 	}
 
+	/**
+	 * Constructs an interceptor with a backoff policy, retryable response statuses, and
+	 * custom configuration.
+	 * @param backOff the backoff policy
+	 * @param retryableResponseStatuses the set of retryable HTTP status codes
+	 * @param configurer a consumer to configure additional options
+	 */
 	public RetryableClientHttpRequestInterceptor(BackOff backOff, Set<Integer> retryableResponseStatuses,
 			Consumer<Options> configurer) {
 		Options options = new Options();
@@ -232,6 +341,14 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				: options.sensitiveHeaderPredicate;
 	}
 
+	/**
+	 * Intercepts the HTTP request and retries based on configured retry policies.
+	 * @param request the HTTP request
+	 * @param body the request body
+	 * @param execution the request execution
+	 * @return the HTTP response
+	 * @throws IOException if an I/O error occurs during execution
+	 */
 	@Override
 	public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
 			throws IOException {
@@ -337,10 +454,20 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		throw new IllegalStateException("Maximum number of attempts reached!");
 	}
 
+	/**
+	 * Determines if the provided IOException is retryable based on the configured
+	 * predicate.
+	 * @param e the IOException
+	 * @return true if the exception is retryable, false otherwise
+	 */
 	private boolean isRetryableIOException(IOException e) {
 		return this.retryableIOExceptionPredicate.test(e);
 	}
 
+	/**
+	 * Default implementation of {@link RetryableHttpResponsePredicate} that checks if the
+	 * HTTP response status is retryable.
+	 */
 	private class DefaultRetryableHttpResponsePredicate implements RetryableHttpResponsePredicate {
 
 		@Override
@@ -351,10 +478,22 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 	}
 
+	/**
+	 * Checks if an HTTP status code is retryable based on the error state and configured
+	 * retryable statuses.
+	 * @param isErrorStatus whether the status code represents an error
+	 * @param statusCode the HTTP status code
+	 * @return true if the status code is retryable, false otherwise
+	 */
 	private boolean isRetryableHttpStatus(boolean isErrorStatus, int statusCode) throws IOException {
 		return isErrorStatus && this.retryableResponseStatuses.contains(statusCode);
 	}
 
+	/**
+	 * Masks sensitive HTTP headers based on the configured predicate.
+	 * @param headers the HTTP headers
+	 * @return a map of headers with sensitive values masked
+	 */
 	private Map<String, List<String>> maskHeaders(HttpHeaders headers) {
 		return headers.entrySet().stream().map(entry -> {
 			if (sensitiveHeaderPredicate.test(entry.getKey().toLowerCase())) {
@@ -381,6 +520,11 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 		}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 	}
 
+	/**
+	 * Escapes special characters in a string to ensure safe logging.
+	 * @param input the input string
+	 * @return the escaped string
+	 */
 	private static String escape(String input) {
 		if (input == null) {
 			return null;
