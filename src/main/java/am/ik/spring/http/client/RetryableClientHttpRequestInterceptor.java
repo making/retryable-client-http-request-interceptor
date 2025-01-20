@@ -345,28 +345,14 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 
 		@Override
 		public boolean isRetryableHttpResponse(ClientHttpResponse response) throws IOException {
-			return isRetryableHttpStatus(() -> response.getStatusCode().isError(),
-					() -> response.getStatusCode().value());
+			// to work with both Spring 5 (HttpStatus) and 6 (HttpStatusCode)
+			return isRetryableHttpStatus(response.getStatusCode().isError(), response.getStatusCode().value());
 		}
 
 	}
 
-	// to work with both Spring 5 (HttpStatus) and 6 (HttpStatusCode)
-	private boolean isRetryableHttpStatus(ErrorSupplier errorSupplier, StatusSupplier statusSupplier)
-			throws IOException {
-		return errorSupplier.isError() && this.retryableResponseStatuses.contains(statusSupplier.getStatus());
-	}
-
-	private interface ErrorSupplier {
-
-		boolean isError() throws IOException;
-
-	}
-
-	private interface StatusSupplier {
-
-		int getStatus() throws IOException;
-
+	private boolean isRetryableHttpStatus(boolean isErrorStatus, int statusCode) throws IOException {
+		return isErrorStatus && this.retryableResponseStatuses.contains(statusCode);
 	}
 
 	private Map<String, List<String>> maskHeaders(HttpHeaders headers) {
