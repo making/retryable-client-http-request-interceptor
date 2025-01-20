@@ -27,7 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.commons.logging.Log;
@@ -49,8 +48,6 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 	private final Predicate<IOException> retryableIOExceptionPredicate;
 
 	private final RetryableHttpResponsePredicate retryableHttpResponsePredicate;
-
-	private final Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper;
 
 	private final LoadBalanceStrategy loadBalanceStrategy;
 
@@ -79,8 +76,6 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 				RetryableIOExceptionPredicate.defaults());
 
 		private RetryableHttpResponsePredicate retryableHttpResponsePredicate = null;
-
-		private Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper = null;
 
 		private LoadBalanceStrategy loadBalanceStrategy = LoadBalanceStrategy.NOOP;
 
@@ -182,12 +177,6 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			return this;
 		}
 
-		public Options clientHttpResponseMapper(
-				Function<? super ClientHttpResponse, ? extends ClientHttpResponse> clientHttpResponseMapper) {
-			this.clientHttpResponseMapper = clientHttpResponseMapper;
-			return this;
-		}
-
 		public Options loadBalanceStrategy(LoadBalanceStrategy loadBalanceStrategy) {
 			this.loadBalanceStrategy = loadBalanceStrategy;
 			if (loadBalanceStrategy instanceof RetryLifecycle) {
@@ -237,7 +226,6 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 			.reduce(e -> false, Predicate::or);
 		this.retryableHttpResponsePredicate = options.retryableHttpResponsePredicate == null
 				? new DefaultRetryableHttpResponsePredicate() : options.retryableHttpResponsePredicate;
-		this.clientHttpResponseMapper = options.clientHttpResponseMapper;
 		this.loadBalanceStrategy = options.loadBalanceStrategy;
 		this.retryLifecycle = options.retryLifecycle;
 		this.sensitiveHeaderPredicate = options.sensitiveHeaderPredicate == null ? options.sensitiveHeaders::contains
@@ -269,9 +257,7 @@ public class RetryableClientHttpRequestInterceptor implements ClientHttpRequestI
 							.append("\" "));
 					log.debug(message.toString().trim());
 				}
-				ClientHttpResponse delegate = execution.execute(httpRequest, body);
-				ClientHttpResponse response = this.clientHttpResponseMapper == null ? delegate
-						: this.clientHttpResponseMapper.apply(delegate);
+				ClientHttpResponse response = execution.execute(httpRequest, body);
 				if (log.isDebugEnabled()) {
 					long duration = System.currentTimeMillis() - begin;
 					StringBuilder message = new StringBuilder("type=res attempts=").append(i)

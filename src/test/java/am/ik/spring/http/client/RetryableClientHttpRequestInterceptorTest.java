@@ -43,6 +43,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.SpringVersion;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
@@ -325,8 +326,9 @@ class RetryableClientHttpRequestInterceptorTest {
 					InputStream body = response.getBody();
 					String message = StreamUtils.copyToString(body, StandardCharsets.UTF_8);
 					return response.getStatusCode().value() == 400 && message.contains("503 SERVICE_UNAVAILABLE");
-				}).clientHttpResponseMapper(CachedClientHttpResponse::new))));
-		restTemplate.setRequestFactory(requestFactory);
+				}))));
+		// required to look the response body many times
+		restTemplate.setRequestFactory(new BufferingClientHttpRequestFactory(requestFactory));
 		final ResponseEntity<String> response = restTemplate
 			.getForEntity(String.format("http://localhost:%d/remote", this.mockServerRunner.port()), String.class);
 		assertThat(response.getBody()).isEqualTo("Hello World!");
