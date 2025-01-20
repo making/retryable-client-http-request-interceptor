@@ -16,12 +16,14 @@
 package am.ik.spring.http.client;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.nio.channels.UnresolvedAddressException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
@@ -41,12 +43,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.SpringVersion;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.client.support.HttpRequestWrapper;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
+import org.springframework.util.StreamUtils;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.ResourceAccessException;
@@ -310,6 +314,26 @@ class RetryableClientHttpRequestInterceptorTest {
 				return cause instanceof UnknownHostException || (cause instanceof ConnectException
 						&& cause.getCause() instanceof UnresolvedAddressException);
 			});
+	}
+
+	// gh-51
+	@ParameterizedTest
+	@MethodSource("requestFactories")
+	void retry_fixed_recover_with_custom_RetryableHttpResponsePredicate(ClientHttpRequestFactory requestFactory) {
+		final RestTemplate restTemplate = new RestTemplate();
+		restTemplate.setInterceptors(Collections.singletonList(new RetryableClientHttpRequestInterceptor(
+				new FixedBackOff(100, 2), options -> options.retryableHttpResponsePredicate(response -> {
+					InputStream body = response.getBody();
+					String message = StreamUtils.copyToString(body, StandardCharsets.UTF_8);
+					return response.getStatusCode().value() == 400 && message.contains("503 SERVICE_UNAVAILABLE");
+				}))));
+		// required to look the response body many times
+		restTemplate.setRequestFactory(new BufferingClientHttpRequestFactory(requestFactory));
+		final ResponseEntity<String> response = restTemplate
+			.getForEntity(String.format("http://localhost:%d/remote", this.mockServerRunner.port()), String.class);
+		assertThat(response.getBody()).isEqualTo("Hello World!");
+		// to work with both Spring 5 and 6
+		assertThat(response.toString()).contains("200");
 	}
 
 	private static class NoOpResponseErrorHandler implements ResponseErrorHandler {

@@ -15,14 +15,13 @@
  */
 package am.ik.spring.http.client;
 
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -84,6 +83,19 @@ public class MockServerRunner {
 					}
 				}
 				exchange.sendResponseHeaders(200, body.length());
+				printWriter.write(body);
+				printWriter.flush();
+			}
+		});
+		// gh-51
+		this.httpServer.createContext("/remote", exchange -> {
+			log.info(exchange.getRequestURI().toString());
+			try (final OutputStream stream = exchange.getResponseBody()) {
+				final PrintWriter printWriter = new PrintWriter(stream);
+				final boolean success = counter.getAndIncrement() % 3 == 2;
+				final String body = success ? "Hello World!"
+						: "503 SERVICE_UNAVAILABLE \"Error Occurred while Querying upstream system \"";
+				exchange.sendResponseHeaders(success ? 200 : 400, body.length());
 				printWriter.write(body);
 				printWriter.flush();
 			}
