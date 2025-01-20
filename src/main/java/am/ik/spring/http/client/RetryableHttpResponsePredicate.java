@@ -18,6 +18,11 @@ package am.ik.spring.http.client;
 import java.io.IOException;
 import org.springframework.http.client.ClientHttpResponse;
 
+/**
+ * The interface to check the HTTP response and determine whether a retry is possible.
+ *
+ * @since 0.7.0
+ */
 @FunctionalInterface
 public interface RetryableHttpResponsePredicate {
 
